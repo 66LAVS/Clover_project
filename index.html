@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Clover UI</title>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="icon" type="image/png" href="logo.png" />
+<script src="https://unpkg.com/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+<style>
+body{margin:0;background:#071a2f;color:white;font-family:Arial;}
+header{background:#020f1f;padding:6px 12px;display:flex;justify-content:space-between;}
+.tabs{display:flex;background:#020f1f;}
+.tab{padding:8px 12px;cursor:pointer;}
+.tab.active{background:#0e2a47;}
+
+.page{display:none;}
+.page.active{display:block;}
+
+.main{display:grid;grid-template-columns:1fr 3fr;height:calc(100vh - 80px);gap:8px;padding:8px;}
+
+.left{display:grid;grid-template-rows:auto auto;gap:8px;}
+.right{display:grid;grid-template-rows:3fr 1fr;gap:8px;}
+
+.card{background:#0e2a47;border-radius:8px;padding:6px;}
+
+#video{width:100%;height:100%;border-radius:8px;object-fit:cover;}
+
+.bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+
+button,input{width:100%;padding:4px;border:none;border-radius:4px;}
+button{background:#1d4ed8;color:white;}
+button.danger{background:#dc2626;}
+
+#batteryBox{background:#020f1f;border-radius:6px;overflow:hidden;}
+#batteryBar{height:16px;width:0%;background:#22c55e;}
+
+#log{height:90px;background:black;overflow-y:auto;font-size:11px;}
+
+.joy{width:120px;height:120px;background:#020f1f;border-radius:50%;margin:auto;}
+
+.compass{width:120px;height:120px;border:3px solid white;border-radius:50%;margin:auto;position:relative;}
+.arrow{width:4px;height:45px;background:red;position:absolute;left:50%;top:10px;transform-origin:bottom;}
+
+.icon{font-size:18px;}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div><i class="fa-solid fa-helicopter"></i> Clover</div>
+  <div id="status">Отключено</div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showPage('connect')"><i class="fa-solid fa-plug"></i> Подключение</div>
+  <div class="tab" onclick="showPage('control')"><i class="fa-solid fa-gamepad"></i> Управление</div>
+</div>
+
+<div id="connect" class="page active">
+  <div class="card" style="width:350px;margin:20px;">
+    <h3>Подключение</h3>
+    <input id="rosurl" value="ws://192.168.11.1:9090">
+    <button onclick="connect()">Подключиться</button>
+
+    <h4 style="margin-top:10px;">Лог подключения</h4>
+    <div id="connectLog" style="height:150px;background:black;color:#0f0;
+         overflow-y:auto;font-size:11px;padding:4px;"></div>
+  </div>
+</div>
+
+
+<div id="control" class="page">
+<div class="main">
+
+<div class="left">
+  <div class="card">
+    <h4><i class="fa-solid fa-chart-line"></i> Телеметрия</h4>
+    <div>Yaw: <span id="yaw">—</span></div>
+    <div>Высота: <span id="altT">—</span></div>
+    <div>Скорость: <span id="speed">—</span></div>
+  </div>
+
+  <div class="card">
+    <h4><i class="fa-solid fa-compass"></i> Компас</h4>
+    <div class="compass">
+      <div id="arrow" class="arrow"></div>
+    </div>
+  </div>
+</div>
+
+<div class="right">
+  <div class="card">
+    <img id="video" src="http://192.168.11.1:8080/stream">
+  </div>
+
+  <div class="bottom">
+
+    <div class="card">
+      <h4><i class="fa-solid fa-location-dot"></i> Полёт</h4>
+      <input id="lat" placeholder="Широта">
+      <input id="lon" placeholder="Долгота">
+      <input id="alt" placeholder="Высота">
+      <button onclick="flyGlobal()">ЛЕТЕТЬ</button>
+    </div>
+
+    <div class="card">
+      <h4><i class="fa-solid fa-battery-half"></i> Батарея</h4>
+      <div id="batteryBox"><div id="batteryBar"></div></div>
+      <div><span id="batteryText">—</span>%</div>
+    </div>
+
+    <div class="card">
+      <button class="danger" onclick="land()"><i class="fa-solid fa-triangle-exclamation"></i> ПОСАДКА</button>
+      <button onclick="selfCheck()"><i class="fa-solid fa-stethoscope"></i> SELF CHECK</button>
+      <pre id="selfcheck">—</pre>
+    </div>
+
+    <div class="card">
+      <h4><i class="fa-solid fa-list"></i> Журнал</h4>
+      <div id="log"></div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;justify-content:space-around;padding-top:8px;">
+    <div>
+      <div id="joy1" class="joy"></div>
+      <div style="text-align:center">Движение</div>
+    </div>
+    <div>
+      <div id="joy2" class="joy"></div>
+      <div style="text-align:center">Газ/поворот</div>
+    </div>
+  </div>
+
+</div>
+
+</div>
+</div>
+
+<script>
+let socket;
+let linX=0, linY=0, angZ=0, linZ=0;
+
+function log(m){logEl.innerHTML+=m+"<br>";logEl.scrollTop=logEl.scrollHeight;}
+
+function clog(m){
+  connectLog.innerHTML += m + "<br>";
+  connectLog.scrollTop = connectLog.scrollHeight;
+}
+
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function connect(){
+  clog("Попытка подключения к " + rosurl.value);
+
+  try {
+    socket = new WebSocket(rosurl.value);
+  } catch(e){
+    clog("❌ Ошибка создания WebSocket: " + e);
+    return;
+  }
+
+  socket.onopen = ()=>{
+    clog("✅ WebSocket подключен");
+    status.innerText="Подключено";
+    showPage("control");
+    subscribe();
+    log("Подключено");
+    startJoysticks();
+    setInterval(sendCmdVel,100);
+  };
+
+  socket.onerror = (e)=>{
+    clog("❌ Ошибка WebSocket");
+    console.error(e);
+  };
+
+  socket.onclose = ()=>{
+    clog("⚠️ Соединение закрыто");
+  };
+
+  socket.onmessage = e=>{
+    const d = JSON.parse(e.data);
+
+    // логируем служебные ошибки ROS
+    if(d.op==="status"){
+      clog("ROS: " + d.msg);
+    }
+
+    if(d.op==="service_response" && !d.result){
+      clog("❌ Ошибка сервиса: " + d.service);
+    }
+
+    // остальная логика (твоя)
+    if(d.topic==="/mavros/local_position/pose"){
+      const q=d.msg.pose.orientation;
+      const yaw=Math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z));
+      arrow.style.transform=`rotate(${yaw}rad)`;
+      yawEl.innerText=yaw.toFixed(2);
+    }
+
+    if(d.topic==="/mavros/battery"){
+      const p=d.msg.percentage*100;
+      batteryText.innerText=p.toFixed(0);
+      batteryBar.style.width=p+"%";
+      batteryBar.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
+    }
+
+    if(d.op==="service_response" && d.service==="/selfcheck"){
+      selfcheck.innerText=JSON.stringify(d.values,null,2);
+      log("Selfcheck OK");
+    }
+  };
+}
+
+
+function subscribe(){
+  ["/mavros/local_position/pose","/mavros/battery"].forEach(t=>{
+    socket.send(JSON.stringify({op:"subscribe",topic:t}));
+  });
+}
+
+function startJoysticks(){
+  const j1=nipplejs.create({zone:joy1,mode:"static",position:{left:"60px",top:"60px"}});
+  const j2=nipplejs.create({zone:joy2,mode:"static",position:{left:"60px",top:"60px"}});
+
+  j1.on("move",(_,d)=>{linX=d.vector.y;linY=d.vector.x;});
+  j1.on("end",()=>{linX=0;linY=0;});
+
+  j2.on("move",(_,d)=>{linZ=d.vector.y;angZ=d.vector.x;});
+  j2.on("end",()=>{linZ=0;angZ=0;});
+}
+
+function sendCmdVel(){
+  if(!socket) return;
+  socket.send(JSON.stringify({
+    op:"publish",
+    topic:"/cmd_vel",
+    msg:{
+      linear:{x:linX,y:linY,z:linZ},
+      angular:{x:0,y:0,z:angZ}
+    }
+  }));
+}
+
+function flyGlobal(){
+  socket.send(JSON.stringify({
+    op:"publish",
+    topic:"/navigate_global",
+    msg:{latitude:+lat.value,longitude:+lon.value,altitude:+alt.value,speed:1}
+  }));
+  log("Полет по координатам");
+}
+
+function land(){
+  socket.send(JSON.stringify({op:"call_service",service:"/land",args:{}}));
+  log("Экстренная посадка");
+}
+
+function selfCheck(){
+  socket.send(JSON.stringify({op:"call_service",service:"/selfcheck",args:{}}));
+}
+</script>
+
+</body>
+</html>
