@@ -835,9 +835,21 @@ function connect(){
   };
 
   socket.onerror = (e)=>{
-    clog("❌ Ошибка WebSocket");
-    setCheckStatus('ros','fail','Ошибка');
-    console.error(e);
+    clog("❌ Ошибка WebSocket: " + e.message);
+    setCheckStatus('ros','fail','Ошибка соединения');
+    console.error("WebSocket error:", e);
+
+    // Очистка интервала при ошибке
+    if(cmdVelInterval) {
+      clearInterval(cmdVelInterval);
+      cmdVelInterval = null;
+    }
+
+    // Сброс состояния socket
+    if(socket) {
+      socket.close();
+      socket = null;
+    }
   };
 
   socket.onclose = ()=>{
@@ -852,57 +864,81 @@ function connect(){
   };
 
   socket.onmessage = e=>{
-    const d = JSON.parse(e.data);
+    // Проверка активного соединения перед обработкой
+    if(socket.readyState !== WebSocket.OPEN) return;
 
-    if(d.op==="status") clog("ROS: " + d.msg);
-    if(d.op==="service_response" && !d.result) clog("❌ Ошибка сервиса: " + d.service);
+    try {
+      const d = JSON.parse(e.data);
 
-    if(d.topic==="/mavros/local_position/pose"){
-      const v = document.getElementById('check-telemetry');
-      if(v && v.classList.contains('checking')) setCheckStatus('telemetry','ok','Данные получены');
-      const p = d.msg.pose.position;
-      const q = d.msg.pose.orientation;
-      const yaw = Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z));
-      if(arrow) arrow.style.transform = `rotate(${yaw}rad)`;
-      if(yawEl) yawEl.innerText = yaw.toFixed(2);
-      const yawDegEl = document.getElementById('yawDeg');
-      if(yawDegEl) yawDegEl.textContent = (yaw * 180 / Math.PI).toFixed(0) + '°';
-      const telemX = document.getElementById('telemX'), telemY = document.getElementById('telemY'), telemZ = document.getElementById('telemZ');
-      if(telemX) telemX.textContent = p.x.toFixed(2);
-      if(telemY) telemY.textContent = p.y.toFixed(2);
-      if(telemZ) telemZ.textContent = p.z.toFixed(2);
-      const altT = document.getElementById('altT');
-      if(altT) altT.textContent = p.z.toFixed(2) + ' м';
-      updateMapFromPose(d.msg);
-    }
+      if(d.op==="status") clog("ROS: " + d.msg);
+      if(d.op==="service_response" && !d.result) clog("❌ Ошибка сервиса: " + d.service);
 
-    if(d.topic==="/mavros/state"){
-      const modeEl = document.getElementById('flightMode');
-      if(modeEl && d.msg.mode) modeEl.textContent = d.msg.mode;
-    }
+      if(d.topic==="/mavros/local_position/pose"){
+        const v = document.getElementById('check-telemetry');
+        if(v && v.classList.contains('checking')) setCheckStatus('telemetry','ok','Данные получены');
+        const p = d.msg.pose.position;
+        const q = d.msg.pose.orientation;
+        const yaw = Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z));
 
-    if(d.topic==="/mavros/local_position/velocity_local"){
-      const lin = d.msg.twist ? d.msg.twist.linear : d.msg;
-      const vx = lin.x||0, vy = lin.y||0, vz = lin.z||0;
-      const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
-      const speedEl = document.getElementById('speed');
-      if(speedEl) speedEl.textContent = spd.toFixed(2) + ' м/с';
-    }
+        // Проверка существования элементов перед использованием
+        const arrowEl = document.getElementById('arrow');
+        if(arrowEl) arrowEl.style.transform = `rotate(${yaw}rad)`;
 
-    if(d.topic==="/mavros/battery"){
-      const v = document.getElementById('check-battery');
-      if(v && v.classList.contains('checking')) setCheckStatus('battery','ok','Данные получены');
-      const p=d.msg.percentage*100;
-      batteryText.innerText=p.toFixed(0);
-      batteryBar.style.width=p+"%";
-      batteryBar.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
-    }
+        const yawEl = document.getElementById('yaw');
+        if(yawEl) yawEl.innerText = yaw.toFixed(2);
 
-    if(d.op==="service_response" && d.service==="/selfcheck"){
-      const v = document.getElementById('check-selfcheck');
-      if(v) setCheckStatus('selfcheck','ok','OK');
-      selfcheck.innerText=JSON.stringify(d.values,null,2);
-      log("Selfcheck OK");
+        const yawDegEl = document.getElementById('yawDeg');
+        if(yawDegEl) yawDegEl.textContent = (yaw * 180 / Math.PI).toFixed(0) + '°';
+
+        const telemX = document.getElementById('telemX');
+        const telemY = document.getElementById('telemY');
+        const telemZ = document.getElementById('telemZ');
+        if(telemX) telemX.textContent = p.x.toFixed(2);
+        if(telemY) telemY.textContent = p.y.toFixed(2);
+        if(telemZ) telemZ.textContent = p.z.toFixed(2);
+
+        const altT = document.getElementById('altT');
+        if(altT) altT.textContent = p.z.toFixed(2) + ' м';
+
+        updateMapFromPose(d.msg);
+      }
+
+      if(d.topic==="/mavros/state"){
+        const modeEl = document.getElementById('flightMode');
+        if(modeEl && d.msg.mode) modeEl.textContent = d.msg.mode;
+      }
+
+      if(d.topic==="/mavros/local_position/velocity_local"){
+        const lin = d.msg.twist ? d.msg.twist.linear : d.msg;
+        const vx = lin.x||0, vy = lin.y||0, vz = lin.z||0;
+        const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
+        const speedEl = document.getElementById('speed');
+        if(speedEl) speedEl.textContent = spd.toFixed(2) + ' м/с';
+      }
+
+      if(d.topic==="/mavros/battery"){
+        const v = document.getElementById('check-battery');
+        if(v && v.classList.contains('checking')) setCheckStatus('battery','ok','Данные получены');
+        const p=d.msg.percentage*100;
+        const batteryTextEl = document.getElementById('batteryText');
+        const batteryBarEl = document.getElementById('batteryBar');
+        if(batteryTextEl) batteryTextEl.innerText=p.toFixed(0);
+        if(batteryBarEl) {
+          batteryBarEl.style.width=p+"%";
+          batteryBarEl.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
+        }
+      }
+
+      if(d.op==="service_response" && d.service==="/selfcheck"){
+        const v = document.getElementById('check-selfcheck');
+        if(v) setCheckStatus('selfcheck','ok','OK');
+        const selfcheckEl = document.getElementById('selfcheck');
+        if(selfcheckEl) selfcheckEl.innerText=JSON.stringify(d.values,null,2);
+        log("Selfcheck OK");
+      }
+    } catch (error) {
+      clog("❌ Ошибка обработки сообщения: " + error.message);
+      console.error("Ошибка парсинга JSON или обработки:", error);
     }
   };
 }
