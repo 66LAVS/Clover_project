@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Clover UI</title>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="icon" type="image/png" href="logo.png" />
+<script src="https://unpkg.com/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600&display=swap');
+
+:root {
+  --bg: #0c0c0f;
+  --surface: #16161a;
+  --surface-hover: #1c1c22;
+  --border: #2a2a32;
+  --accent: #f59e0b;
+  --accent-dim: #b45309;
+  --text: #e4e4e7;
+  --text-muted: #71717a;
+  --success: #10b981;
+  --danger: #ef4444;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+header {
+  background: var(--surface);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+header > div:first-child {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+.header-right { display: flex; align-items: center; gap: 10px; }
+#status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+.header-btn {
+  padding: 6px 12px !important;
+  width: auto !important;
+  font-size: 12px !important;
+  margin: 0 !important;
+}
+
+.tabs {
+  display: flex;
+  background: var(--surface);
+  padding: 0 12px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  padding: 12px 18px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+.main {
+  display: grid;
+  grid-template-columns: 280px 1fr 280px;
+  grid-template-rows: 1fr auto;
+  height: calc(100vh - 100px);
+  gap: 12px;
+  padding: 12px;
+}
+
+.control-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  grid-row: 1 / -1;
+}
+.control-center {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.control-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  grid-row: 1 / -1;
+}
+.control-bottom {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.card:hover { border-color: var(--accent-dim); }
+.card h3, .card h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.card h4 i { color: var(--accent); margin-right: 6px; }
+
+.control-center .card img#video {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.bottom { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+button, input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 13px;
+  margin-top: 6px;
+}
+input {
+  background: var(--bg);
+  color: var(--text);
+}
+input::placeholder { color: var(--text-muted); }
+button {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+button:hover { background: var(--accent-dim); }
+button:active { transform: scale(0.98); }
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+button.danger:hover { background: #b91c1c; }
+
+#batteryBox {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 6px;
+}
+#batteryBar {
+  height: 14px;
+  width: 0%;
+  background: var(--success);
+  border-radius: 4px;
+  transition: width 0.3s, background 0.3s;
+}
+
+#log {
+  height: 90px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 8px;
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+.control-card .row { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 12px; }
+.control-card .row .val { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+.control-card .btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.control-card .btn-row button { flex: 1; min-width: 0; margin-top: 0; padding: 8px 10px; font-size: 12px; }
+.control-card label { display: block; margin-top: 8px; margin-bottom: 2px; font-size: 11px; color: var(--text-muted); }
+.control-card label:first-of-type { margin-top: 0; }
+.control-card input[type="number"] { margin-top: 2px; padding: 6px 8px; font-size: 12px; }
+
+.joy-wrap { text-align: center; }
+.joy {
+  width: 100px;
+  height: 100px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  margin: 0 auto 4px;
+  transition: border-color 0.2s;
+}
+.joy:hover { border-color: var(--accent-dim); }
+.joy-wrap .joy-label { font-size: 11px; color: var(--text-muted); }
+
+.compass-wrap { text-align: center; }
+.compass {
+  width: 100px;
+  height: 100px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  margin: 0 auto 4px;
+  position: relative;
+  background: var(--bg);
+}
+.arrow {
+  width: 3px;
+  height: 38px;
+  background: var(--accent);
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  margin-left: -1.5px;
+  transform-origin: bottom center;
+  border-radius: 2px;
+}
+.compass-wrap .yaw-val { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); }
+
+.icon { font-size: 18px; }
+.control-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.control-section-title:first-child { margin-top: 0; }
+
+#connectLog {
+  height: 150px;
+  background: var(--bg) !important;
+  color: var(--success) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  padding: 8px !important;
+}
+
+/* Connection page */
+.connect-layout {
+  padding: 20px;
+  max-width: 520px;
+}
+.connect-card label {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.connect-card label:first-of-type { margin-top: 0; }
+.connect-docs {
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.connect-docs a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.connect-docs a:hover { text-decoration: underline; }
+.connect-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.connect-actions button { flex: 1; }
+button.secondary {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+button.secondary:hover { background: var(--border); }
+.checklist-title {
+  margin-top: 20px !important;
+  margin-bottom: 10px !important;
+}
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.check-item:last-child { border-bottom: none; }
+.check-icon { width: 20px; text-align: center; color: var(--text-muted); }
+.check-label { flex: 1; }
+.check-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.check-item.pending .check-icon { color: var(--text-muted); }
+.check-item.checking .check-icon { color: var(--accent); }
+.check-item.ok .check-icon { color: var(--success); }
+.check-item.ok .check-status { color: var(--success); }
+.check-item.fail .check-icon { color: var(--danger); }
+.check-item.fail .check-status { color: var(--danger); }
+.check-icon .fa-spinner { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.connect-selfcheck { margin-top: 12px; }
+.connect-selfcheck button { width: auto; }
+
+/* Map page */
+.page-map-layout { padding: 12px; height: calc(100vh - 100px); display: flex; flex-direction: column; gap: 12px; }
+#mapContainer { flex: 1; min-height: 300px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
+.map-legend { font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; }
+.map-legend span { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+
+/* Camera page */
+.page-camera-layout { padding: 12px; height: calc(100vh - 100px); display: flex; flex-direction: column; gap: 12px; }
+#cameraVideoWrap { flex: 1; min-height: 200px; border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+#cameraVideoWrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.camera-docs { display: flex; flex-wrap: wrap; gap: 10px; }
+.camera-docs a { color: var(--accent); font-size: 13px; }
+
+/* Settings page */
+.page-settings-layout { padding: 20px; max-width: 560px; }
+.settings-section { margin-bottom: 24px; }
+.settings-section h3 { font-size: 1rem; margin: 0 0 10px; color: var(--text); }
+.settings-section select { width: 100%; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; margin-top: 6px; }
+.settings-links { list-style: none; padding: 0; margin: 8px 0 0; }
+.settings-links li { margin: 6px 0; }
+.settings-links a { color: var(--accent); text-decoration: none; font-size: 13px; }
+.settings-links a:hover { text-decoration: underline; }
+
+/* Help page */
+.page-help-layout { padding: 20px; max-width: 640px; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.help-card { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.help-card h4 { margin: 0 0 8px; font-size: 0.9rem; color: var(--accent); }
+.help-card ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.help-card a { color: var(--text); text-decoration: none; }
+.help-card a:hover { color: var(--accent); text-decoration: underline; }
+</style>
+</head>
+
+<body>
+
+<header>
+  <div><i class="fa-solid fa-helicopter"></i> Clover</div>
+  <div class="header-right">
+    <span id="status">Отключено</span>
+    <button id="headerDisconnect" class="header-btn" onclick="disconnect()" style="display:none;">Отключиться</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showPage('connect')"><i class="fa-solid fa-plug"></i> Подключение</div>
+  <div class="tab" onclick="showPage('control')"><i class="fa-solid fa-gamepad"></i> Управление</div>
+  <div class="tab" onclick="showPage('map')"><i class="fa-solid fa-map"></i> Карта</div>
+  <div class="tab" onclick="showPage('camera')"><i class="fa-solid fa-video"></i> Камера</div>
+  <div class="tab" onclick="showPage('settings')"><i class="fa-solid fa-sliders"></i> Настройки</div>
+  <div class="tab" onclick="showPage('help')"><i class="fa-solid fa-circle-question"></i> Справка</div>
+</div>
+
+<div id="connect" class="page active">
+  <div class="connect-layout">
+    <div class="card connect-card">
+      <h3><i class="fa-solid fa-plug"></i> Подключение к Клеверу</h3>
+      <p class="connect-docs">
+        <a href="https://clover.coex.tech/ru/" target="_blank" rel="noopener">Документация Клевер</a> — Wi‑Fi, образ RPi, настройка.
+      </p>
+      <label>ROS Bridge (WebSocket)</label>
+      <input id="rosurl" value="ws://192.168.11.1:9090" placeholder="ws://192.168.11.1:9090">
+      <label>Видеопоток (опционально)</label>
+      <input id="videoUrl" value="http://192.168.11.1:8080/stream" placeholder="http://192.168.11.1:8080/stream">
+      <div class="connect-actions">
+        <button id="btnConnect" onclick="connect()">Подключиться</button>
+        <button id="btnDisconnect" class="secondary" onclick="disconnect()" style="display:none;">Отключиться</button>
+      </div>
+
+      <h4 class="checklist-title"><i class="fa-solid fa-clipboard-check"></i> Проверки подключения</h4>
+      <ul class="checklist" id="checklist">
+        <li class="check-item" id="check-network" data-check="network">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">Сеть (доступность хоста)</span>
+          <span class="check-status">—</span>
+        </li>
+        <li class="check-item" id="check-ros" data-check="ros">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">ROS Bridge (WebSocket)</span>
+          <span class="check-status">—</span>
+        </li>
+        <li class="check-item" id="check-video" data-check="video">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">Видеопоток</span>
+          <span class="check-status">—</span>
+        </li>
+        <li class="check-item" id="check-telemetry" data-check="telemetry">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">MAVROS (телеметрия)</span>
+          <span class="check-status">—</span>
+        </li>
+        <li class="check-item" id="check-battery" data-check="battery">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">Батарея</span>
+          <span class="check-status">—</span>
+        </li>
+        <li class="check-item" id="check-selfcheck" data-check="selfcheck">
+          <span class="check-icon"><i class="fa-solid fa-circle-question"></i></span>
+          <span class="check-label">Self-check (опционально)</span>
+          <span class="check-status">—</span>
+        </li>
+      </ul>
+      <div class="connect-selfcheck">
+        <button class="secondary" onclick="runSelfCheckFromConnect()"><i class="fa-solid fa-stethoscope"></i> Запустить Self-check</button>
+      </div>
+
+      <h4 style="margin-top:16px;">Лог подключения</h4>
+      <div id="connectLog"></div>
+    </div>
+  </div>
+</div>
+
+
+<div id="control" class="page">
+<div class="main">
+
+  <aside class="control-left">
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-chart-line"></i> Телеметрия</h4>
+      <div class="row"><span>X</span><span class="val" id="telemX">—</span></div>
+      <div class="row"><span>Y</span><span class="val" id="telemY">—</span></div>
+      <div class="row"><span>Z</span><span class="val" id="telemZ">—</span></div>
+      <div class="row"><span>Высота</span><span class="val" id="altT">—</span></div>
+      <div class="row"><span>Yaw</span><span class="val" id="yaw">—</span></div>
+      <div class="row"><span>Скорость</span><span class="val" id="speed">—</span></div>
+      <div class="row"><span>Режим</span><span class="val" id="flightMode">—</span></div>
+    </div>
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-battery-half"></i> Батарея</h4>
+      <div id="batteryBox"><div id="batteryBar"></div></div>
+      <div class="row"><span>Заряд</span><span class="val" id="batteryText">—</span>%</div>
+    </div>
+    <div class="card control-card compass-wrap">
+      <h4><i class="fa-solid fa-compass"></i> Компас</h4>
+      <div class="compass">
+        <div id="arrow" class="arrow"></div>
+      </div>
+      <span class="yaw-val" id="yawDeg">—°</span>
+    </div>
+    <div class="card control-card">
+      <div class="control-section-title">Ручное управление</div>
+      <div class="joy-wrap">
+        <div id="joy1" class="joy"></div>
+        <span class="joy-label">Движение X/Y</span>
+      </div>
+      <div class="joy-wrap" style="margin-top:10px;">
+        <div id="joy2" class="joy"></div>
+        <span class="joy-label">Газ / Поворот</span>
+      </div>
+    </div>
+  </aside>
+
+  <section class="control-center">
+    <div class="card" style="flex:1;min-height:0;display:flex;">
+      <img id="video" src="http://192.168.11.1:8080/stream" alt="Видеопоток">
+    </div>
+    <div class="control-bottom">
+      <div class="card control-card">
+        <h4><i class="fa-solid fa-plane-departure"></i> Действия</h4>
+        <div class="btn-row">
+          <button onclick="takeoff()"><i class="fa-solid fa-arrow-up"></i> Взлёт</button>
+          <button class="danger" onclick="land()"><i class="fa-solid fa-arrow-down"></i> Посадка</button>
+          <button class="secondary" onclick="release()"><i class="fa-solid fa-pause"></i> Release</button>
+        </div>
+        <div class="btn-row">
+          <button class="secondary" onclick="arm(true)">Arm</button>
+          <button class="secondary" onclick="arm(false)">Disarm</button>
+        </div>
+      </div>
+      <div class="card control-card">
+        <h4><i class="fa-solid fa-map-location-dot"></i> Локальная навигация</h4>
+        <label>X (м)</label><input type="number" id="navX" placeholder="0" step="0.1">
+        <label>Y (м)</label><input type="number" id="navY" placeholder="0" step="0.1">
+        <label>Z (м)</label><input type="number" id="navZ" placeholder="1" step="0.1">
+        <label>Скорость (м/с)</label><input type="number" id="navSpeed" value="0.5" step="0.1" min="0">
+        <button onclick="navigate()" style="margin-top:8px;">Лететь</button>
+      </div>
+      <div class="card control-card">
+        <h4><i class="fa-solid fa-globe"></i> Глобальная навигация</h4>
+        <label>Широта</label><input type="number" id="lat" placeholder="55.75" step="0.0001">
+        <label>Долгота</label><input type="number" id="lon" placeholder="37.62" step="0.0001">
+        <label>Высота (м)</label><input type="number" id="alt" placeholder="1" step="0.1">
+        <label>Скорость (м/с)</label><input type="number" id="globalSpeed" value="1" step="0.1" min="0">
+        <button onclick="flyGlobal()" style="margin-top:8px;">Лететь</button>
+      </div>
+      <div class="card control-card">
+        <h4><i class="fa-solid fa-arrows-up-down"></i> Высота / Курс</h4>
+        <label>Высота (м)</label><input type="number" id="setAltVal" placeholder="1.5" step="0.1">
+        <button onclick="setAltitude()" style="margin-top:6px;">Установить высоту</button>
+        <label style="margin-top:8px;">Yaw (град)</label><input type="number" id="setYawVal" placeholder="0" step="15">
+        <button onclick="setYaw()" style="margin-top:6px;">Установить курс</button>
+      </div>
+      <div class="card control-card">
+        <h4><i class="fa-solid fa-stethoscope"></i> Диагностика</h4>
+        <button onclick="selfCheck()">Self-check</button>
+        <pre id="selfcheck">—</pre>
+      </div>
+      <div class="card control-card" style="grid-column:1/-1;">
+        <h4><i class="fa-solid fa-list"></i> Журнал</h4>
+        <div id="log"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="control-right">
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-book"></i> Документация</h4>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">Автономный полёт, MAVROS, системы координат:</p>
+      <a href="https://clover.coex.tech/ru/simple_offboard.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;">simple_offboard</a><br>
+      <a href="https://clover.coex.tech/ru/mavros.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;">MAVROS</a><br>
+      <a href="https://clover.coex.tech/ru/frames.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;">Системы координат</a>
+    </div>
+  </aside>
+
+</div>
+</div>
+
+<div id="map" class="page">
+  <div class="page-map-layout">
+    <div class="card control-card" style="margin:0;">
+      <h4><i class="fa-solid fa-map-location-dot"></i> Локальная позиция (ENU)</h4>
+      <div class="map-legend">
+        <span>X: <span id="mapX">—</span> м</span>
+        <span>Y: <span id="mapY">—</span> м</span>
+        <span>Z: <span id="mapZ">—</span> м</span>
+      </div>
+    </div>
+    <div id="mapContainer"></div>
+    <p style="font-size:12px;color:var(--text-muted);">Координаты относительно точки инициализации полётного контроллера. Документация: <a href="https://clover.coex.tech/ru/frames.html" target="_blank" rel="noopener" style="color:var(--accent);">Системы координат</a>.</p>
+  </div>
+</div>
+
+<div id="camera" class="page">
+  <div class="page-camera-layout">
+    <div class="card control-card" style="margin:0;">
+      <h4><i class="fa-solid fa-video"></i> Видеопоток с камеры</h4>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">Камера Raspberry Pi для полётов с компьютерным зрением и ArUco.</p>
+    </div>
+    <div id="cameraVideoWrap">
+      <img id="cameraVideo" src="" alt="Видеопоток" style="display:none;">
+      <span id="cameraPlaceholder" style="color:var(--text-muted);">Подключитесь для видеопотока</span>
+    </div>
+    <div class="camera-docs">
+      <a href="https://clover.coex.tech/ru/camera_setup.html" target="_blank" rel="noopener">Настройка камеры</a>
+      <a href="https://clover.coex.tech/ru/aruco.html" target="_blank" rel="noopener">ArUco-маркеры</a>
+      <a href="https://clover.coex.tech/ru/aruco_map.html" target="_blank" rel="noopener">Навигация по карте маркеров</a>
+    </div>
+  </div>
+</div>
+
+<div id="settings" class="page">
+  <div class="page-settings-layout">
+    <div class="card control-card">
+      <h3><i class="fa-solid fa-sliders"></i> Настройки полёта</h3>
+      <div class="settings-section">
+        <label>Полетный режим (MAVROS set_mode)</label>
+        <select id="flightModeSelect">
+          <option value="OFFBOARD">OFFBOARD</option>
+          <option value="AUTO.LAND">AUTO.LAND</option>
+          <option value="AUTO.RTL">AUTO.RTL</option>
+          <option value="ALTITUDE">ALTITUDE</option>
+          <option value="POSITION">POSITION</option>
+          <option value="STABILIZED">STABILIZED</option>
+          <option value="MANUAL">MANUAL</option>
+        </select>
+        <button onclick="setFlightMode()" style="margin-top:10px;">Установить режим</button>
+      </div>
+    </div>
+    <div class="card control-card">
+      <h3><i class="fa-solid fa-wrench"></i> Документация по настройке</h3>
+      <ul class="settings-links">
+        <li><a href="https://clover.coex.tech/ru/calibration.html" target="_blank" rel="noopener">Калибровка датчиков</a></li>
+        <li><a href="https://clover.coex.tech/ru/modes.html" target="_blank" rel="noopener">Полетные режимы</a></li>
+        <li><a href="https://clover.coex.tech/ru/failsafe.html" target="_blank" rel="noopener">Настройка Failsafe</a></li>
+        <li><a href="https://clover.coex.tech/ru/power.html" target="_blank" rel="noopener">Настройка питания</a></li>
+        <li><a href="https://clover.coex.tech/ru/rc.html" target="_blank" rel="noopener">Настройка пульта</a></li>
+        <li><a href="https://clover.coex.tech/ru/image.html" target="_blank" rel="noopener">Образ для Raspberry Pi</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="help" class="page">
+  <div class="page-help-layout">
+    <div class="card control-card" style="margin:0 0 16px;">
+      <h3><i class="fa-solid fa-circle-question"></i> Документация Клевер</h3>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;">Разделы официальной документации <a href="https://clover.coex.tech/ru/" target="_blank" rel="noopener" style="color:var(--accent);">clover.coex.tech</a>.</p>
+    </div>
+    <div class="help-grid">
+      <div class="help-card">
+        <h4>Сборка и настройка</h4>
+        <ul>
+          <li><a href="https://clover.coex.tech/ru/assembly.html" target="_blank" rel="noopener">Сборка</a></li>
+          <li><a href="https://clover.coex.tech/ru/calibration.html" target="_blank" rel="noopener">Калибровка</a></li>
+          <li><a href="https://clover.coex.tech/ru/connection.html" target="_blank" rel="noopener">Подключение RPi к Pixracer</a></li>
+          <li><a href="https://clover.coex.tech/ru/wifi.html" target="_blank" rel="noopener">Подключение по Wi-Fi</a></li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h4>Программирование</h4>
+        <ul>
+          <li><a href="https://clover.coex.tech/ru/simple_offboard.html" target="_blank" rel="noopener">Автономный полёт (OFFBOARD)</a></li>
+          <li><a href="https://clover.coex.tech/ru/frames.html" target="_blank" rel="noopener">Системы координат</a></li>
+          <li><a href="https://clover.coex.tech/ru/mavros.html" target="_blank" rel="noopener">MAVROS</a></li>
+          <li><a href="https://clover.coex.tech/ru/ros.html" target="_blank" rel="noopener">ROS</a></li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h4>Камера и зрение</h4>
+        <ul>
+          <li><a href="https://clover.coex.tech/ru/camera_setup.html" target="_blank" rel="noopener">Настройка камеры</a></li>
+          <li><a href="https://clover.coex.tech/ru/aruco.html" target="_blank" rel="noopener">ArUco-маркеры</a></li>
+          <li><a href="https://clover.coex.tech/ru/aruco_map.html" target="_blank" rel="noopener">Карта маркеров</a></li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h4>Raspberry Pi</h4>
+        <ul>
+          <li><a href="https://clover.coex.tech/ru/image.html" target="_blank" rel="noopener">Образ для RPi</a></li>
+          <li><a href="https://clover.coex.tech/ru/ssh.html" target="_blank" rel="noopener">SSH-доступ</a></li>
+          <li><a href="https://clover.coex.tech/ru/cli.html" target="_blank" rel="noopener">Командная строка</a></li>
+          <li><a href="https://clover.coex.tech/ru/selfcheck.html" target="_blank" rel="noopener">Автоматическая проверка</a></li>
+        </ul>
+      </div>
+      <div class="help-card">
+        <h4>Дополнительно</h4>
+        <ul>
+          <li><a href="https://clover.coex.tech/ru/simulator.html" target="_blank" rel="noopener">Симулятор</a></li>
+          <li><a href="https://clover.coex.tech/ru/safety.html" target="_blank" rel="noopener">Безопасность</a></li>
+          <li><a href="https://clover.coex.tech/ru/glossary.html" target="_blank" rel="noopener">Глоссарий</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let socket;
+let linX=0, linY=0, angZ=0, linZ=0;
+let cmdVelInterval;
+const logEl = document.getElementById('log');
+const yawEl = document.getElementById('yaw');
+let mapInstance = null;
+let mapMarker = null;
+let lastPoseForMap = { x: 0, y: 0, z: 0 };
+
+function log(m){ if(logEl){ logEl.innerHTML+=m+"<br>"; logEl.scrollTop=logEl.scrollHeight; } }
+
+function clog(m){
+  connectLog.innerHTML += m + "<br>";
+  connectLog.scrollTop = connectLog.scrollHeight;
+}
+
+function setCheckStatus(checkId, state, statusText){
+  const el = document.getElementById('check-' + checkId);
+  if(!el) return;
+  el.className = 'check-item ' + state;
+  const icon = el.querySelector('.check-icon');
+  const statusSpan = el.querySelector('.check-status');
+  if(icon){
+    if(state==='pending') icon.innerHTML = '<i class="fa-solid fa-circle-question"></i>';
+    else if(state==='checking') icon.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    else if(state==='ok') icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+    else if(state==='fail') icon.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
+  }
+  if(statusSpan) statusSpan.textContent = statusText || (state==='ok'?'OK':state==='fail'?'Ошибка':'—');
+}
+
+function getHostFromWs(wsUrl){
+  try {
+    const u = new URL(wsUrl);
+    return u.hostname;
+  } catch(e){ return null; }
+}
+
+function getVideoUrl(){
+  const v = document.getElementById('videoUrl');
+  if(v && v.value) return v.value.trim();
+  const host = getHostFromWs(rosurl.value);
+  return host ? 'http://'+host+':8080/stream' : 'http://192.168.11.1:8080/stream';
+}
+
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const tab = document.querySelector('.tab[onclick*="'+id+'"]');
+  if(tab) tab.classList.add('active');
+  if(id==='map') initMapIfNeeded();
+  if(id==='camera') setCameraVideoSrc();
+}
+
+function initMapIfNeeded(){
+  if(mapInstance) return;
+  const container = document.getElementById('mapContainer');
+  if(!container || !L) return;
+  mapInstance = L.map(container, { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4 });
+  const bounds = [[-20, -20], [20, 20]];
+  mapInstance.setMaxBounds(bounds);
+  mapInstance.setView([0, 0], 1);
+  L.rectangle(bounds, { color: 'var(--border)', weight: 1, fill: false }).addTo(mapInstance);
+  mapMarker = L.marker([lastPoseForMap.y, lastPoseForMap.x]).addTo(mapInstance);
+}
+
+function updateMapFromPose(pose){
+  const p = pose.pose ? pose.pose.position : pose.position;
+  if(!p) return;
+  lastPoseForMap = { x: p.x, y: p.y, z: p.z };
+  const mapX = document.getElementById('mapX'), mapY = document.getElementById('mapY'), mapZ = document.getElementById('mapZ');
+  if(mapX) mapX.textContent = p.x.toFixed(2);
+  if(mapY) mapY.textContent = p.y.toFixed(2);
+  if(mapZ) mapZ.textContent = p.z.toFixed(2);
+  if(mapMarker) mapMarker.setLatLng([p.y, p.x]);
+}
+
+function setCameraVideoSrc(){
+  const cam = document.getElementById('cameraVideo');
+  const placeholder = document.getElementById('cameraPlaceholder');
+  const url = getVideoUrl();
+  if(!url){ if(placeholder) placeholder.style.display=''; if(cam) cam.style.display='none'; return; }
+  if(cam){ cam.src = url + (url.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now(); cam.style.display = ''; }
+  if(placeholder) placeholder.style.display = 'none';
+}
+
+function connect(){
+  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id=> setCheckStatus(id,'pending','—'));
+  clog("Попытка подключения к " + rosurl.value);
+
+  const host = getHostFromWs(rosurl.value);
+  if(host){
+    setCheckStatus('network','checking','Проверка...');
+    const img = new Image();
+    const t = setTimeout(()=>{
+      const el = document.getElementById('check-network');
+      if(el && el.classList.contains('checking')) setCheckStatus('network','fail','Хост недоступен');
+    }, 5000);
+    img.onload = img.onerror = ()=>{
+      clearTimeout(t);
+      setCheckStatus('network','ok','Хост доступен');
+    };
+    img.src = 'http://'+host+'/favicon.ico?_='+Date.now();
+  } else setCheckStatus('network','fail','Неверный URL');
+
+  setCheckStatus('ros','checking','Подключение...');
+  try {
+    socket = new WebSocket(rosurl.value);
+  } catch(e){
+    clog("❌ Ошибка создания WebSocket: " + e);
+    setCheckStatus('ros','fail', e.message);
+    return;
+  }
+
+  socket.onopen = ()=>{
+    setCheckStatus('ros','ok','Подключено');
+    clog("✅ WebSocket подключен");
+    status.innerText="Подключено";
+    document.getElementById('btnConnect').style.display = 'none';
+    document.getElementById('btnDisconnect').style.display = 'block';
+    const hd = document.getElementById('headerDisconnect');
+    if(hd) hd.style.display = 'block';
+
+    const streamUrl = getVideoUrl();
+    setCheckStatus('video','checking','Проверка...');
+    const videoImg = document.getElementById('video');
+    if(videoImg){
+      videoImg.onerror = ()=>{ setCheckStatus('video','fail','Нет видеопотока'); };
+      videoImg.onload = ()=>{ setCheckStatus('video','ok','OK'); };
+      videoImg.src = streamUrl + (streamUrl.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
+      setTimeout(()=>{
+        const v = document.getElementById('check-video');
+        if(v && v.classList.contains('checking')) setCheckStatus('video','fail','Таймаут');
+      }, 6000);
+    }
+    const cameraVideo = document.getElementById('cameraVideo');
+    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+    if(cameraVideo){
+      cameraVideo.onerror = ()=>{};
+      cameraVideo.src = streamUrl + (streamUrl.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
+      cameraVideo.style.display = '';
+      if(cameraPlaceholder) cameraPlaceholder.style.display = 'none';
+    }
+
+    setCheckStatus('telemetry','checking','Ожидание данных...');
+    setCheckStatus('battery','checking','Ожидание данных...');
+    subscribe();
+    log("Подключено");
+    startJoysticks();
+    cmdVelInterval = setInterval(sendCmdVel,100);
+    showPage("control");
+  };
+
+  socket.onerror = (e)=>{
+    clog("❌ Ошибка WebSocket");
+    setCheckStatus('ros','fail','Ошибка');
+    console.error(e);
+  };
+
+  socket.onclose = ()=>{
+    clog("⚠️ Соединение закрыто");
+    setCheckStatus('ros','fail','Закрыто');
+    document.getElementById('btnConnect').style.display = 'block';
+    document.getElementById('btnDisconnect').style.display = 'none';
+    const hd = document.getElementById('headerDisconnect');
+    if(hd) hd.style.display = 'none';
+    if(cmdVelInterval) clearInterval(cmdVelInterval);
+    status.innerText = "Отключено";
+  };
+
+  socket.onmessage = e=>{
+    const d = JSON.parse(e.data);
+
+    if(d.op==="status") clog("ROS: " + d.msg);
+    if(d.op==="service_response" && !d.result) clog("❌ Ошибка сервиса: " + d.service);
+
+    if(d.topic==="/mavros/local_position/pose"){
+      const v = document.getElementById('check-telemetry');
+      if(v && v.classList.contains('checking')) setCheckStatus('telemetry','ok','Данные получены');
+      const p = d.msg.pose.position;
+      const q = d.msg.pose.orientation;
+      const yaw = Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z));
+      if(arrow) arrow.style.transform = `rotate(${yaw}rad)`;
+      if(yawEl) yawEl.innerText = yaw.toFixed(2);
+      const yawDegEl = document.getElementById('yawDeg');
+      if(yawDegEl) yawDegEl.textContent = (yaw * 180 / Math.PI).toFixed(0) + '°';
+      const telemX = document.getElementById('telemX'), telemY = document.getElementById('telemY'), telemZ = document.getElementById('telemZ');
+      if(telemX) telemX.textContent = p.x.toFixed(2);
+      if(telemY) telemY.textContent = p.y.toFixed(2);
+      if(telemZ) telemZ.textContent = p.z.toFixed(2);
+      const altT = document.getElementById('altT');
+      if(altT) altT.textContent = p.z.toFixed(2) + ' м';
+      updateMapFromPose(d.msg);
+    }
+
+    if(d.topic==="/mavros/state"){
+      const modeEl = document.getElementById('flightMode');
+      if(modeEl && d.msg.mode) modeEl.textContent = d.msg.mode;
+    }
+
+    if(d.topic==="/mavros/local_position/velocity_local"){
+      const lin = d.msg.twist ? d.msg.twist.linear : d.msg;
+      const vx = lin.x||0, vy = lin.y||0, vz = lin.z||0;
+      const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
+      const speedEl = document.getElementById('speed');
+      if(speedEl) speedEl.textContent = spd.toFixed(2) + ' м/с';
+    }
+
+    if(d.topic==="/mavros/battery"){
+      const v = document.getElementById('check-battery');
+      if(v && v.classList.contains('checking')) setCheckStatus('battery','ok','Данные получены');
+      const p=d.msg.percentage*100;
+      batteryText.innerText=p.toFixed(0);
+      batteryBar.style.width=p+"%";
+      batteryBar.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
+    }
+
+    if(d.op==="service_response" && d.service==="/selfcheck"){
+      const v = document.getElementById('check-selfcheck');
+      if(v) setCheckStatus('selfcheck','ok','OK');
+      selfcheck.innerText=JSON.stringify(d.values,null,2);
+      log("Selfcheck OK");
+    }
+  };
+}
+
+function disconnect(){
+  if(socket){ socket.close(); socket = null; }
+  showPage('connect');
+  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id=> setCheckStatus(id,'pending','—'));
+}
+
+function runSelfCheckFromConnect(){
+  if(!socket || socket.readyState !== WebSocket.OPEN){
+    clog("❌ Сначала подключитесь к ROS Bridge");
+    return;
+  }
+  setCheckStatus('selfcheck','checking','Запрос...');
+  socket.send(JSON.stringify({op:"call_service",service:"/selfcheck",args:{}}));
+  clog("Запрос Self-check отправлен");
+}
+
+
+function subscribe(){
+  ["/mavros/local_position/pose","/mavros/battery","/mavros/state","/mavros/local_position/velocity_local"].forEach(t=>{
+    socket.send(JSON.stringify({op:"subscribe",topic:t}));
+  });
+}
+
+function startJoysticks(){
+  const joy1El = document.getElementById('joy1'), joy2El = document.getElementById('joy2');
+  if(!joy1El || !joy2El) return;
+  const j1 = nipplejs.create({ zone: joy1El, mode: "static", position: { left: "50px", top: "50px" } });
+  const j2 = nipplejs.create({ zone: joy2El, mode: "static", position: { left: "50px", top: "50px" } });
+
+  j1.on("move",(_,d)=>{linX=d.vector.y;linY=d.vector.x;});
+  j1.on("end",()=>{linX=0;linY=0;});
+
+  j2.on("move",(_,d)=>{linZ=d.vector.y;angZ=d.vector.x;});
+  j2.on("end",()=>{linZ=0;angZ=0;});
+}
+
+function sendCmdVel(){
+  if(!socket) return;
+  socket.send(JSON.stringify({
+    op:"publish",
+    topic:"/cmd_vel",
+    msg:{
+      linear:{x:linX,y:linY,z:linZ},
+      angular:{x:0,y:0,z:angZ}
+    }
+  }));
+}
+
+function takeoff(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const z = parseFloat(document.getElementById('navZ').value) || 1.5;
+  const speed = parseFloat(document.getElementById('navSpeed').value) || 0.5;
+  callNavigate(0, 0, z, speed, true);
+  log("Взлёт на " + z + " м");
+}
+
+function callNavigate(x, y, z, speed, auto_arm){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({
+    op: "call_service",
+    service: "/navigate",
+    args: { x: x, y: y, z: z, frame_id: "map", auto_arm: !!auto_arm, speed: speed || 0.5, yaw: 0 }
+  }));
+}
+
+function navigate(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const x = parseFloat(document.getElementById('navX').value) || 0;
+  const y = parseFloat(document.getElementById('navY').value) || 0;
+  const z = parseFloat(document.getElementById('navZ').value) || 1;
+  const speed = parseFloat(document.getElementById('navSpeed').value) || 0.5;
+  callNavigate(x, y, z, speed, false);
+  log("Навигация: " + x + ", " + y + ", " + z + " м");
+}
+
+function flyGlobal(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const spd = parseFloat(document.getElementById('globalSpeed').value) || 1;
+  socket.send(JSON.stringify({
+    op: "publish",
+    topic: "/navigate_global",
+    msg: { latitude: +lat.value, longitude: +lon.value, altitude: +alt.value, speed: spd }
+  }));
+  log("Полет по координатам (скорость " + spd + " м/с)");
+}
+
+function setAltitude(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const altVal = parseFloat(document.getElementById('setAltVal').value);
+  if(isNaN(altVal)) { log("Укажите высоту"); return; }
+  socket.send(JSON.stringify({
+    op: "call_service",
+    service: "/set_altitude",
+    args: { frame_id: "map", altitude: altVal }
+  }));
+  log("Установка высоты " + altVal + " м");
+}
+
+function setYaw(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const deg = parseFloat(document.getElementById('setYawVal').value);
+  if(isNaN(deg)) { log("Укажите курс (град)"); return; }
+  const yawRad = deg * Math.PI / 180;
+  socket.send(JSON.stringify({
+    op: "call_service",
+    service: "/set_yaw",
+    args: { frame_id: "map", yaw: yawRad }
+  }));
+  log("Установка курса " + deg + "°");
+}
+
+function release(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ op: "call_service", service: "/release", args: {} }));
+  log("Release — остановка setpoint");
+}
+
+function arm(value){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({
+    op: "call_service",
+    service: "/mavros/cmd/arming",
+    args: { value: !!value }
+  }));
+  log(value ? "Arm" : "Disarm");
+}
+
+function land(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ op: "call_service", service: "/land", args: {} }));
+  log("Посадка");
+}
+
+function selfCheck(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ op: "call_service", service: "/selfcheck", args: {} }));
+  log("Запрос Self-check");
+}
+
+function setFlightMode(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const sel = document.getElementById('flightModeSelect');
+  const mode = sel ? sel.value : 'OFFBOARD';
+  socket.send(JSON.stringify({
+    op: "call_service",
+    service: "/mavros/set_mode",
+    args: { custom_mode: mode }
+  }));
+  log("Режим: " + mode);
+}
+</script>
+
+</body>
+</html>
