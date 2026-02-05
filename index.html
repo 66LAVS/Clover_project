@@ -38,7 +38,7 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: linear-gradient(180deg, #0a0a1a 0%, #0a0a0a 100%);
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
@@ -151,7 +151,6 @@ header > div:first-child {
   padding: 16px;
   max-width: 1800px;
   margin: 0 auto;
-  background: linear-gradient(180deg, rgba(10, 10, 10, 0.8) 0%, rgba(18, 18, 18, 0.3) 100%), var(--bg);
 }
 
 .control-left {
@@ -1265,333 +1264,1043 @@ button.secondary:hover {
 </div>
 
 <script>
-let socket;
-let linX=0, linY=0, angZ=0, linZ=0;
-let cmdVelInterval;
-const logEl = document.getElementById('log');
-const yawEl = document.getElementById('yaw');
-let mapInstance = null;
-let mapMarker = null;
-let lastPoseForMap = { x: 0, y: 0, z: 0 };
+// Configuration and State
+const CONFIG = {
+  DEFAULT_ROS_URL: "ws://192.168.11.1:9090",
+  DEFAULT_VIDEO_URL: "http://192.168.11.1:8080/stream",
+  MAX_RECONNECT_ATTEMPTS: 5,
+  RECONNECT_DELAY: 3000,
+  BATTERY_CRITICAL_LEVEL: 20,
+  BATTERY_WARNING_LEVEL: 30
+};
 
-function log(m){ if(logEl){ logEl.innerHTML+=m+"<br>"; logEl.scrollTop=logEl.scrollHeight; } }
+const STATE = {
+  socket: null,
+  linX: 0,
+  linY: 0,
+  angZ: 0,
+  linZ: 0,
+  cmdVelInterval: null,
+  reconnectAttempts: 0,
+  isConnecting: false,
+  commandQueue: [],
+  lastPoseForMap: { x: 0, y: 0, z: 0 },
+  mapInstance: null,
+  mapMarker: null
+};
 
-function clog(m){
-  connectLog.innerHTML += m + "<br>";
-  connectLog.scrollTop = connectLog.scrollHeight;
+// DOM Elements Cache
+const DOM = {
+  log: document.getElementById('log'),
+  yaw: document.getElementById('yaw'),
+  status: document.getElementById('status'),
+  rosurl: document.getElementById('rosurl'),
+  videoUrl: document.getElementById('videoUrl'),
+  batteryText: document.getElementById('batteryText'),
+  batteryBar: document.getElementById('batteryBar'),
+  arrow: document.getElementById('arrow'),
+  connectLog: document.getElementById('connectLog'),
+  btnConnect: document.getElementById('btnConnect'),
+  btnDisconnect: document.getElementById('btnDisconnect'),
+  headerDisconnect: document.getElementById('headerDisconnect')
+};
+
+// Initialize the application
+function init() {
+  loadSettings();
+  setupEventListeners();
+  log("Clover UI initialized");
 }
 
-function setCheckStatus(checkId, state, statusText){
-  const el = document.getElementById('check-' + checkId);
-  if(!el) return;
-  el.className = 'check-item ' + state;
-  const icon = el.querySelector('.check-icon');
-  const statusSpan = el.querySelector('.check-status');
-  if(icon){
-    if(state==='pending') icon.innerHTML = '<i class="fa-solid fa-circle-question"></i>';
-    else if(state==='checking') icon.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    else if(state==='ok') icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
-    else if(state==='fail') icon.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
-  }
-  if(statusSpan) statusSpan.textContent = statusText || (state==='ok'?'OK':state==='fail'?'Ошибка':'—');
-}
+// Load saved settings from localStorage
+function loadSettings() {
+  const savedRosUrl = localStorage.getItem('rosBridgeUrl');
+  const savedVideoUrl = localStorage.getItem('videoStreamUrl');
 
-function getHostFromWs(wsUrl){
-  try {
-    const u = new URL(wsUrl);
-    return u.hostname;
-  } catch(e){ return null; }
-}
-
-function getVideoUrl(){
-  const v = document.getElementById('videoUrl');
-  if(v && v.value) return v.value.trim();
-  const host = getHostFromWs(rosurl.value);
-  return host ? 'http://'+host+':8080/stream' : 'http://192.168.11.1:8080/stream';
-}
-
-function showPage(id){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  const tab = document.querySelector('.tab[onclick*="'+id+'"]');
-  if(tab) tab.classList.add('active');
-  if(id==='map') initMapIfNeeded();
-  if(id==='camera') setCameraVideoSrc();
-}
-
-function initMapIfNeeded(){
-  if(mapInstance) return;
-  const container = document.getElementById('mapContainer');
-  if(!container || !L) return;
-  mapInstance = L.map(container, { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4 });
-  const bounds = [[-20, -20], [20, 20]];
-  mapInstance.setMaxBounds(bounds);
-  mapInstance.setView([0, 0], 1);
-  L.rectangle(bounds, { color: 'var(--border)', weight: 1, fill: false }).addTo(mapInstance);
-  mapMarker = L.marker([lastPoseForMap.y, lastPoseForMap.x]).addTo(mapInstance);
-}
-
-function updateMapFromPose(pose){
-  const p = pose.pose ? pose.pose.position : pose.position;
-  if(!p) return;
-  lastPoseForMap = { x: p.x, y: p.y, z: p.z };
-  const mapX = document.getElementById('mapX'), mapY = document.getElementById('mapY'), mapZ = document.getElementById('mapZ');
-  if(mapX) mapX.textContent = p.x.toFixed(2);
-  if(mapY) mapY.textContent = p.y.toFixed(2);
-  if(mapZ) mapZ.textContent = p.z.toFixed(2);
-  if(mapMarker) mapMarker.setLatLng([p.y, p.x]);
-}
-
-function setCameraVideoSrc(){
-  const cam = document.getElementById('cameraVideo');
-  const placeholder = document.getElementById('cameraPlaceholder');
-  const url = getVideoUrl();
-
-  if(!url){
-    if(placeholder) placeholder.style.display='';
-    if(cam) cam.style.display='none';
-    return;
+  if (savedRosUrl && DOM.rosurl) {
+    DOM.rosurl.value = savedRosUrl;
   }
 
-  if(cam){
-    cam.onerror = function() {
-      console.error("Camera video error: " + url);
-      if(placeholder) placeholder.textContent = 'Ошибка загрузки видеопотока: ' + url;
-      if(placeholder) placeholder.style.display = '';
-      cam.style.display = 'none';
-    };
-
-    cam.onload = function() {
-      console.log("Camera video loaded successfully");
-      if(placeholder) placeholder.style.display = 'none';
-      cam.style.display = '';
-    };
-
-    cam.src = url + (url.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
+  if (savedVideoUrl && DOM.videoUrl) {
+    DOM.videoUrl.value = savedVideoUrl;
   }
 }
 
-function connect(){
-  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id=> setCheckStatus(id,'pending','—'));
-  clog("Попытка подключения к " + rosurl.value);
-
-  const host = getHostFromWs(rosurl.value);
-  if(host){
-    setCheckStatus('network','checking','Проверка...');
-    const img = new Image();
-    const t = setTimeout(()=>{
-      const el = document.getElementById('check-network');
-      if(el && el.classList.contains('checking')) setCheckStatus('network','fail','Хост недоступен');
-    }, 5000);
-    img.onload = img.onerror = ()=>{
-      clearTimeout(t);
-      setCheckStatus('network','ok','Хост доступен');
-    };
-    img.src = 'http://'+host+'/favicon.ico?_='+Date.now();
-  } else setCheckStatus('network','fail','Неверный URL');
-
-  setCheckStatus('ros','checking','Подключение...');
-  try {
-    socket = new WebSocket(rosurl.value);
-  } catch(e){
-    clog("❌ Ошибка создания WebSocket: " + e);
-    setCheckStatus('ros','fail', e.message);
-    return;
+// Save settings to localStorage
+function saveSettings() {
+  if (DOM.rosurl) {
+    localStorage.setItem('rosBridgeUrl', DOM.rosurl.value);
   }
 
-  socket.onopen = ()=>{
-    setCheckStatus('ros','ok','Подключено');
-    clog("✅ WebSocket подключен");
-    status.innerText="Подключено";
-    document.getElementById('btnConnect').style.display = 'none';
-    document.getElementById('btnDisconnect').style.display = 'block';
-    const hd = document.getElementById('headerDisconnect');
-    if(hd) hd.style.display = 'block';
-
-    const streamUrl = getVideoUrl();
-    setCheckStatus('video','checking','Проверка...');
-
-    // Test main video stream
-    const videoImg = document.getElementById('video');
-    if(videoImg){
-      videoImg.onerror = ()=>{ setCheckStatus('video','fail','Нет видеопотока'); };
-      videoImg.onload = ()=>{ setCheckStatus('video','ok','OK'); };
-      videoImg.src = streamUrl + (streamUrl.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
-      setTimeout(()=>{
-        const v = document.getElementById('check-video');
-        if(v && v.classList.contains('checking')) setCheckStatus('video','fail','Таймаут');
-      }, 6000);
-    }
-
-    // Test camera video stream with better error handling
-    const cameraVideo = document.getElementById('cameraVideo');
-    const cameraPlaceholder = document.getElementById('cameraPlaceholder');
-    if(cameraVideo){
-      cameraVideo.onerror = function() {
-        console.error("Camera video error: " + streamUrl);
-        if(cameraPlaceholder) {
-          cameraPlaceholder.textContent = 'Ошибка загрузки видеопотока: ' + streamUrl;
-          cameraPlaceholder.style.color = 'var(--danger)';
-        }
-        cameraVideo.style.display = 'none';
-        if(cameraPlaceholder) cameraPlaceholder.style.display = '';
-      };
-
-      cameraVideo.onload = function() {
-        console.log("Camera video loaded successfully");
-        if(cameraPlaceholder) cameraPlaceholder.style.display = 'none';
-        cameraVideo.style.display = '';
-      };
-
-      cameraVideo.src = streamUrl + (streamUrl.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
-    }
-
-    setCheckStatus('telemetry','checking','Ожидание данных...');
-    setCheckStatus('battery','checking','Ожидание данных...');
-    subscribe();
-    log("Подключено");
-    startJoysticks();
-    showPage("control");
-  };
-
-  socket.onerror = (e)=>{
-    clog("❌ Ошибка WebSocket");
-    setCheckStatus('ros','fail','Ошибка');
-    console.error(e);
-  };
-
-  socket.onclose = ()=>{
-    clog("⚠️ Соединение закрыто");
-    setCheckStatus('ros','fail','Закрыто');
-    document.getElementById('btnConnect').style.display = 'block';
-    document.getElementById('btnDisconnect').style.display = 'none';
-    const hd = document.getElementById('headerDisconnect');
-    if(hd) hd.style.display = 'none';
-    if(cmdVelInterval) clearInterval(cmdVelInterval);
-    status.innerText = "Отключено";
-  };
-
-  socket.onmessage = e=>{
-    const d = JSON.parse(e.data);
-
-    if(d.op==="status") clog("ROS: " + d.msg);
-    if(d.op==="service_response" && !d.result) clog("❌ Ошибка сервиса: " + d.service);
-
-    if(d.topic==="/mavros/local_position/pose"){
-      const v = document.getElementById('check-telemetry');
-      if(v && v.classList.contains('checking')) setCheckStatus('telemetry','ok','Данные получены');
-      const p = d.msg.pose.position;
-      const q = d.msg.pose.orientation;
-      const yaw = Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z));
-      if(arrow) arrow.style.transform = `rotate(${yaw}rad)`;
-      if(yawEl) yawEl.innerText = yaw.toFixed(2);
-      const yawDegEl = document.getElementById('yawDeg');
-      if(yawDegEl) yawDegEl.textContent = (yaw * 180 / Math.PI).toFixed(0) + '°';
-      const telemX = document.getElementById('telemX'), telemY = document.getElementById('telemY'), telemZ = document.getElementById('telemZ');
-      if(telemX) telemX.textContent = p.x.toFixed(2);
-      if(telemY) telemY.textContent = p.y.toFixed(2);
-      if(telemZ) telemZ.textContent = p.z.toFixed(2);
-      const altT = document.getElementById('altT');
-      if(altT) altT.textContent = p.z.toFixed(2) + ' м';
-      updateMapFromPose(d.msg);
-    }
-
-    if(d.topic==="/mavros/state"){
-      const modeEl = document.getElementById('flightMode');
-      if(modeEl && d.msg.mode) modeEl.textContent = d.msg.mode;
-    }
-
-    if(d.topic==="/mavros/local_position/velocity_local"){
-      const lin = d.msg.twist ? d.msg.twist.linear : d.msg;
-      const vx = lin.x||0, vy = lin.y||0, vz = lin.z||0;
-      const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
-      const speedEl = document.getElementById('speed');
-      if(speedEl) speedEl.textContent = spd.toFixed(2) + ' м/с';
-    }
-
-    if(d.topic==="/mavros/battery"){
-      const v = document.getElementById('check-battery');
-      if(v && v.classList.contains('checking')) setCheckStatus('battery','ok','Данные получены');
-      const p=d.msg.percentage*100;
-      batteryText.innerText=p.toFixed(0);
-      batteryBar.style.width=p+"%";
-      batteryBar.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
-
-      // Update voltage display if element exists
-      const voltageEl = document.getElementById('batteryVoltage');
-      if(voltageEl && d.msg.voltage) voltageEl.textContent = d.msg.voltage.toFixed(1) + ' V';
-    }
-
-    // Add GPS sensor data handling
-    if(d.topic==="/mavros/global_position/global"){
-      const gpsFixEl = document.getElementById('gpsFix');
-      const gpsSatsEl = document.getElementById('gpsSats');
-      if(gpsFixEl) gpsFixEl.textContent = d.msg.fix_type || '—';
-      if(gpsSatsEl) gpsSatsEl.textContent = d.msg.satellites_visible || '—';
-    }
-
-    // Add IMU sensor data handling
-    if(d.topic==="/mavros/imu/data"){
-      const imuTempEl = document.getElementById('imuTemp');
-      if(imuTempEl && d.msg.temperature) imuTempEl.textContent = d.msg.temperature.toFixed(1) + '°C';
-    }
-
-    // Add RC signal status
-    if(d.topic==="/mavros/rc/in"){
-      const rcSignalEl = document.getElementById('rcSignal');
-      if(rcSignalEl) {
-        const hasSignal = d.msg.channels && d.msg.channels.some(c => c > 1000);
-        rcSignalEl.textContent = hasSignal ? 'Есть сигнал' : 'Нет сигнала';
-        rcSignalEl.style.color = hasSignal ? 'var(--success)' : 'var(--danger)';
-      }
-    }
-
-    if(d.op==="service_response" && d.service==="/selfcheck"){
-      const v = document.getElementById('check-selfcheck');
-      if(v) {
-        if(d.result) {
-          setCheckStatus('selfcheck','ok','OK');
-          selfcheck.innerText=JSON.stringify(d.values,null,2);
-          log("Selfcheck OK");
-        } else {
-          setCheckStatus('selfcheck','fail','Ошибка');
-          selfcheck.innerText="Ошибка selfcheck: " + (d.message || 'Неизвестная ошибка');
-          log("❌ Ошибка Selfcheck: " + (d.message || 'Неизвестная ошибка'));
-        }
-      }
-    }
-  };
-}
-
-function disconnect(){
-  if(socket){ socket.close(); socket = null; }
-  showPage('connect');
-  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id=> setCheckStatus(id,'pending','—'));
-}
-
-function runSelfCheckFromConnect(){
-  if(!socket || socket.readyState !== WebSocket.OPEN){
-    clog("❌ Сначала подключитесь к ROS Bridge");
-    return;
+  if (DOM.videoUrl) {
+    localStorage.setItem('videoStreamUrl', DOM.videoUrl.value);
   }
-  setCheckStatus('selfcheck','checking','Запрос...');
-  socket.send(JSON.stringify({op:"call_service",service:"/selfcheck",args:{}}));
-  clog("Запрос Self-check отправлен");
 }
 
+// Setup event listeners
+function setupEventListeners() {
+  // Save settings when connection inputs change
+  if (DOM.rosurl) {
+    DOM.rosurl.addEventListener('change', saveSettings);
+  }
 
-function subscribe(){
-  ["/mavros/local_position/pose","/mavros/battery","/mavros/state","/mavros/local_position/velocity_local","/mavros/global_position/global","/mavros/imu/data","/mavros/rc/in"].forEach(t=>{
-    socket.send(JSON.stringify({op:"subscribe",topic:t}));
+  if (DOM.videoUrl) {
+    DOM.videoUrl.addEventListener('change', saveSettings);
+  }
+
+  // Add global error handler
+  window.addEventListener('error', function(event) {
+    log("❌ Global Error: " + event.message);
+    console.error("Global error:", event);
+  });
+
+  // Add unload handler to clean up
+  window.addEventListener('beforeunload', function() {
+    disconnect();
   });
 }
 
-function startJoysticks(){
-  // Joystick controls have been removed as requested
+// Enhanced logging with timestamp
+function log(m) {
+  if (DOM.log) {
+    const timestamp = new Date().toLocaleTimeString();
+    DOM.log.innerHTML += `[${timestamp}] ${m}<br>`;
+    DOM.log.scrollTop = DOM.log.scrollHeight;
+  }
 }
 
-function sendCmdVel(){
+// Connection log with timestamp
+function clog(m) {
+  if (DOM.connectLog) {
+    const timestamp = new Date().toLocaleTimeString();
+    DOM.connectLog.innerHTML += `[${timestamp}] ${m}<br>`;
+    DOM.connectLog.scrollTop = DOM.connectLog.scrollHeight;
+  }
+}
+
+// Set check status with improved error handling
+function setCheckStatus(checkId, state, statusText) {
+  try {
+    const el = document.getElementById('check-' + checkId);
+    if (!el) return;
+
+    el.className = 'check-item ' + state;
+    const icon = el.querySelector('.check-icon');
+    const statusSpan = el.querySelector('.check-status');
+
+    if (icon) {
+      if (state === 'pending') icon.innerHTML = '<i class="fa-solid fa-circle-question"></i>';
+      else if (state === 'checking') icon.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      else if (state === 'ok') icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+      else if (state === 'fail') icon.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
+    }
+
+    if (statusSpan) {
+      statusSpan.textContent = statusText || (state === 'ok' ? 'OK' : state === 'fail' ? 'Ошибка' : '—');
+    }
+  } catch (e) {
+    console.error("Error setting check status:", e);
+  }
+}
+
+// Extract host from WebSocket URL
+function getHostFromWs(wsUrl) {
+  try {
+    const u = new URL(wsUrl);
+    return u.hostname;
+  } catch (e) {
+    console.error("Invalid WebSocket URL:", wsUrl, e);
+    return null;
+  }
+}
+
+// Get video URL with fallback logic
+function getVideoUrl() {
+  if (DOM.videoUrl && DOM.videoUrl.value) {
+    return DOM.videoUrl.value.trim();
+  }
+
+  const host = getHostFromWs(DOM.rosurl.value);
+  return host ? 'http://' + host + ':8080/stream' : CONFIG.DEFAULT_VIDEO_URL;
+}
+
+// Show page with error handling
+function showPage(id) {
+  try {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const page = document.getElementById(id);
+    if (page) {
+      page.classList.add('active');
+    }
+
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector('.tab[onclick*="' + id + '"]');
+    if (tab) {
+      tab.classList.add('active');
+    }
+
+    if (id === 'map') initMapIfNeeded();
+    if (id === 'camera') setCameraVideoSrc();
+  } catch (e) {
+    log("❌ Error showing page: " + e.message);
+    console.error("Error showing page:", e);
+  }
+}
+
+// Initialize map if needed
+function initMapIfNeeded() {
+  if (STATE.mapInstance) return;
+
+  try {
+    const container = document.getElementById('mapContainer');
+    if (!container || !L) return;
+
+    STATE.mapInstance = L.map(container, { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4 });
+    const bounds = [[-20, -20], [20, 20]];
+    STATE.mapInstance.setMaxBounds(bounds);
+    STATE.mapInstance.setView([0, 0], 1);
+    L.rectangle(bounds, { color: 'var(--border)', weight: 1, fill: false }).addTo(STATE.mapInstance);
+    STATE.mapMarker = L.marker([STATE.lastPoseForMap.y, STATE.lastPoseForMap.x]).addTo(STATE.mapInstance);
+  } catch (e) {
+    log("❌ Error initializing map: " + e.message);
+    console.error("Error initializing map:", e);
+  }
+}
+
+// Update map from pose data
+function updateMapFromPose(pose) {
+  try {
+    const p = pose.pose ? pose.pose.position : pose.position;
+    if (!p) return;
+
+    STATE.lastPoseForMap = { x: p.x, y: p.y, z: p.z };
+    const mapX = document.getElementById('mapX');
+    const mapY = document.getElementById('mapY');
+    const mapZ = document.getElementById('mapZ');
+
+    if (mapX) mapX.textContent = p.x.toFixed(2);
+    if (mapY) mapY.textContent = p.y.toFixed(2);
+    if (mapZ) mapZ.textContent = p.z.toFixed(2);
+
+    if (STATE.mapMarker) {
+      STATE.mapMarker.setLatLng([p.y, p.x]);
+    }
+  } catch (e) {
+    log("❌ Error updating map: " + e.message);
+    console.error("Error updating map:", e);
+  }
+}
+
+// Set camera video source with improved error handling
+function setCameraVideoSrc() {
+  try {
+    const cam = document.getElementById('cameraVideo');
+    const placeholder = document.getElementById('cameraPlaceholder');
+    const url = getVideoUrl();
+
+    if (!url) {
+      if (placeholder) placeholder.style.display = '';
+      if (cam) cam.style.display = 'none';
+      return;
+    }
+
+    if (cam) {
+      cam.onerror = function() {
+        console.error("Camera video error: " + url);
+        if (placeholder) {
+          placeholder.textContent = 'Ошибка загрузки видеопотока: ' + url;
+          placeholder.style.color = 'var(--danger)';
+        }
+        cam.style.display = 'none';
+        if (placeholder) placeholder.style.display = '';
+      };
+
+      cam.onload = function() {
+        console.log("Camera video loaded successfully");
+        if (placeholder) placeholder.style.display = 'none';
+        cam.style.display = '';
+      };
+
+      cam.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+    }
+  } catch (e) {
+    log("❌ Error setting camera video source: " + e.message);
+    console.error("Error setting camera video source:", e);
+  }
+}
+
+// Connect to ROS bridge with enhanced error handling and reconnection
+function connect() {
+  if (STATE.isConnecting) {
+    clog("⚠️ Подключение уже выполняется...");
+    return;
+  }
+
+  if (!DOM.rosurl || !DOM.rosurl.value) {
+    clog("❌ Пожалуйста, укажите URL ROS Bridge");
+    return;
+  }
+
+  STATE.isConnecting = true;
+  STATE.reconnectAttempts = 0;
+
+  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id => setCheckStatus(id, 'pending', '—'));
+  clog("Попытка подключения к " + DOM.rosurl.value);
+  saveSettings();
+
+  // Test network connectivity
+  const host = getHostFromWs(DOM.rosurl.value);
+  if (host) {
+    setCheckStatus('network', 'checking', 'Проверка...');
+    testNetworkConnectivity(host);
+  } else {
+    setCheckStatus('network', 'fail', 'Неверный URL');
+    STATE.isConnecting = false;
+  }
+
+  // Start WebSocket connection
+  setCheckStatus('ros', 'checking', 'Подключение...');
+  connectWebSocket();
+}
+
+// Test network connectivity to host
+function testNetworkConnectivity(host) {
+  const img = new Image();
+  const timeout = setTimeout(() => {
+    const el = document.getElementById('check-network');
+    if (el && el.classList.contains('checking')) {
+      setCheckStatus('network', 'fail', 'Хост недоступен');
+    }
+  }, 5000);
+
+  img.onload = img.onerror = () => {
+    clearTimeout(timeout);
+    setCheckStatus('network', 'ok', 'Хост доступен');
+  };
+
+  img.src = 'http://' + host + '/favicon.ico?_=' + Date.now();
+}
+
+// Connect WebSocket with reconnection logic
+function connectWebSocket() {
+  try {
+    if (STATE.socket) {
+      STATE.socket.close();
+      STATE.socket = null;
+    }
+
+    STATE.socket = new WebSocket(DOM.rosurl.value);
+
+    STATE.socket.onopen = () => {
+      STATE.isConnecting = false;
+      STATE.reconnectAttempts = 0;
+      setCheckStatus('ros', 'ok', 'Подключено');
+      clog("✅ WebSocket подключен");
+      updateConnectionStatus(true);
+
+      // Process any queued commands
+      processCommandQueue();
+
+      // Test video stream
+      testVideoStream();
+
+      // Subscribe to topics
+      setCheckStatus('telemetry', 'checking', 'Ожидание данных...');
+      setCheckStatus('battery', 'checking', 'Ожидание данных...');
+      subscribe();
+
+      log("Подключено");
+      showPage("control");
+    };
+
+    STATE.socket.onerror = (e) => {
+      clog("❌ Ошибка WebSocket: " + (e.message || 'Неизвестная ошибка'));
+      setCheckStatus('ros', 'fail', 'Ошибка');
+      console.error("WebSocket error:", e);
+      attemptReconnect();
+    };
+
+    STATE.socket.onclose = () => {
+      clog("⚠️ Соединение закрыто");
+      setCheckStatus('ros', 'fail', 'Закрыто');
+      updateConnectionStatus(false);
+      attemptReconnect();
+    };
+
+    STATE.socket.onmessage = handleWebSocketMessage;
+  } catch (e) {
+    clog("❌ Ошибка создания WebSocket: " + e.message);
+    setCheckStatus('ros', 'fail', e.message);
+    STATE.isConnecting = false;
+    attemptReconnect();
+    console.error("WebSocket creation error:", e);
+  }
+}
+
+// Attempt to reconnect with exponential backoff
+function attemptReconnect() {
+  STATE.isConnecting = false;
+
+  if (STATE.reconnectAttempts < CONFIG.MAX_RECONNECT_ATTEMPTS) {
+    STATE.reconnectAttempts++;
+    const delay = CONFIG.RECONNECT_DELAY * STATE.reconnectAttempts;
+
+    clog(`⏳ Попытка переподключения (${STATE.reconnectAttempts}/${CONFIG.MAX_RECONNECT_ATTEMPTS}) через ${delay/1000} секунд...`);
+
+    setTimeout(() => {
+      if (!STATE.socket || STATE.socket.readyState === WebSocket.CLOSED) {
+        clog("🔄 Переподключение...");
+        connectWebSocket();
+      }
+    }, delay);
+  } else {
+    clog("❌ Максимальное количество попыток переподключения достигнуто");
+    updateConnectionStatus(false);
+  }
+}
+
+// Update connection status UI
+function updateConnectionStatus(connected) {
+  if (DOM.status) {
+    DOM.status.innerText = connected ? "Подключено" : "Отключено";
+    DOM.status.style.color = connected ? "var(--success)" : "var(--danger)";
+  }
+
+  if (DOM.btnConnect) DOM.btnConnect.style.display = connected ? 'none' : 'block';
+  if (DOM.btnDisconnect) DOM.btnDisconnect.style.display = connected ? 'block' : 'none';
+  if (DOM.headerDisconnect) DOM.headerDisconnect.style.display = connected ? 'block' : 'none';
+
+  if (!connected && STATE.cmdVelInterval) {
+    clearInterval(STATE.cmdVelInterval);
+    STATE.cmdVelInterval = null;
+  }
+}
+
+// Test video stream connectivity
+function testVideoStream() {
+  const streamUrl = getVideoUrl();
+  setCheckStatus('video', 'checking', 'Проверка...');
+
+  // Test main video stream
+  const videoImg = document.getElementById('video');
+  if (videoImg) {
+    videoImg.onerror = () => {
+      setCheckStatus('video', 'fail', 'Нет видеопотока');
+    };
+    videoImg.onload = () => {
+      setCheckStatus('video', 'ok', 'OK');
+    };
+    videoImg.src = streamUrl + (streamUrl.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+
+    setTimeout(() => {
+      const v = document.getElementById('check-video');
+      if (v && v.classList.contains('checking')) {
+        setCheckStatus('video', 'fail', 'Таймаут');
+      }
+    }, 6000);
+  }
+
+  // Test camera video stream
+  const cameraVideo = document.getElementById('cameraVideo');
+  const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+  if (cameraVideo) {
+    cameraVideo.onerror = function() {
+      console.error("Camera video error: " + streamUrl);
+      if (cameraPlaceholder) {
+        cameraPlaceholder.textContent = 'Ошибка загрузки видеопотока: ' + streamUrl;
+        cameraPlaceholder.style.color = 'var(--danger)';
+      }
+      cameraVideo.style.display = 'none';
+      if (cameraPlaceholder) cameraPlaceholder.style.display = '';
+    };
+
+    cameraVideo.onload = function() {
+      console.log("Camera video loaded successfully");
+      if (cameraPlaceholder) cameraPlaceholder.style.display = 'none';
+      cameraVideo.style.display = '';
+    };
+
+    cameraVideo.src = streamUrl + (streamUrl.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+  }
+}
+
+// Handle WebSocket messages
+function handleWebSocketMessage(e) {
+  try {
+    const d = JSON.parse(e.data);
+
+    if (d.op === "status") {
+      clog("ROS: " + d.msg);
+    }
+
+    if (d.op === "service_response" && !d.result) {
+      clog("❌ Ошибка сервиса: " + d.service);
+    }
+
+    // Handle different message topics
+    if (d.topic === "/mavros/local_position/pose") {
+      handlePoseMessage(d);
+    } else if (d.topic === "/mavros/state") {
+      handleStateMessage(d);
+    } else if (d.topic === "/mavros/local_position/velocity_local") {
+      handleVelocityMessage(d);
+    } else if (d.topic === "/mavros/battery") {
+      handleBatteryMessage(d);
+    } else if (d.topic === "/mavros/global_position/global") {
+      handleGPSMessage(d);
+    } else if (d.topic === "/mavros/imu/data") {
+      handleIMUMessage(d);
+    } else if (d.topic === "/mavros/rc/in") {
+      handleRCMessage(d);
+    } else if (d.op === "service_response" && d.service === "/selfcheck") {
+      handleSelfCheckResponse(d);
+    }
+  } catch (e) {
+    log("❌ Error processing WebSocket message: " + e.message);
+    console.error("Error processing message:", e, "Data:", e.data);
+  }
+}
+
+// Handle pose messages
+function handlePoseMessage(d) {
+  const v = document.getElementById('check-telemetry');
+  if (v && v.classList.contains('checking')) {
+    setCheckStatus('telemetry', 'ok', 'Данные получены');
+  }
+
+  try {
+    const p = d.msg.pose.position;
+    const q = d.msg.pose.orientation;
+    const yaw = Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z));
+
+    if (STATE.arrow) {
+      STATE.arrow.style.transform = `rotate(${yaw}rad)`;
+    }
+
+    if (DOM.yaw) {
+      DOM.yaw.innerText = yaw.toFixed(2);
+    }
+
+    const yawDegEl = document.getElementById('yawDeg');
+    if (yawDegEl) {
+      yawDegEl.textContent = (yaw * 180 / Math.PI).toFixed(0) + '°';
+    }
+
+    const telemX = document.getElementById('telemX');
+    const telemY = document.getElementById('telemY');
+    const telemZ = document.getElementById('telemZ');
+
+    if (telemX) telemX.textContent = p.x.toFixed(2);
+    if (telemY) telemY.textContent = p.y.toFixed(2);
+    if (telemZ) telemZ.textContent = p.z.toFixed(2);
+
+    const altT = document.getElementById('altT');
+    if (altT) altT.textContent = p.z.toFixed(2) + ' м';
+
+    updateMapFromPose(d.msg);
+  } catch (e) {
+    log("❌ Error handling pose message: " + e.message);
+    console.error("Error handling pose:", e);
+  }
+}
+
+// Handle state messages
+function handleStateMessage(d) {
+  try {
+    const modeEl = document.getElementById('flightMode');
+    if (modeEl && d.msg.mode) {
+      modeEl.textContent = d.msg.mode;
+    }
+  } catch (e) {
+    log("❌ Error handling state message: " + e.message);
+    console.error("Error handling state:", e);
+  }
+}
+
+// Handle velocity messages
+function handleVelocityMessage(d) {
+  try {
+    const lin = d.msg.twist ? d.msg.twist.linear : d.msg;
+    const vx = lin.x || 0;
+    const vy = lin.y || 0;
+    const vz = lin.z || 0;
+    const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
+
+    const speedEl = document.getElementById('speed');
+    if (speedEl) {
+      speedEl.textContent = spd.toFixed(2) + ' м/с';
+    }
+  } catch (e) {
+    log("❌ Error handling velocity message: " + e.message);
+    console.error("Error handling velocity:", e);
+  }
+}
+
+// Handle battery messages with low battery warning
+function handleBatteryMessage(d) {
+  try {
+    const v = document.getElementById('check-battery');
+    if (v && v.classList.contains('checking')) {
+      setCheckStatus('battery', 'ok', 'Данные получены');
+    }
+
+    const percentage = d.msg.percentage * 100;
+    if (DOM.batteryText) {
+      DOM.batteryText.innerText = percentage.toFixed(0);
+    }
+
+    if (DOM.batteryBar) {
+      DOM.batteryBar.style.width = percentage + "%";
+
+      // Battery level color coding
+      if (percentage > CONFIG.BATTERY_WARNING_LEVEL) {
+        DOM.batteryBar.style.background = "#22c55e"; // Green
+      } else if (percentage > CONFIG.BATTERY_CRITICAL_LEVEL) {
+        DOM.batteryBar.style.background = "#facc15"; // Yellow
+      } else {
+        DOM.batteryBar.style.background = "#ef4444"; // Red
+      }
+    }
+
+    // Show warning if battery is critically low
+    if (percentage <= CONFIG.BATTERY_CRITICAL_LEVEL) {
+      log("⚠️ Критически низкий заряд батареи: " + percentage.toFixed(0) + "%");
+      if (DOM.status) {
+        DOM.status.style.color = "var(--danger)";
+        DOM.status.innerText = "НИЗКИЙ ЗАРЯД: " + percentage.toFixed(0) + "%";
+      }
+    }
+
+    // Update voltage display if element exists
+    const voltageEl = document.getElementById('batteryVoltage');
+    if (voltageEl && d.msg.voltage) {
+      voltageEl.textContent = d.msg.voltage.toFixed(1) + ' V';
+    }
+  } catch (e) {
+    log("❌ Error handling battery message: " + e.message);
+    console.error("Error handling battery:", e);
+  }
+}
+
+// Handle GPS messages
+function handleGPSMessage(d) {
+  try {
+    const gpsFixEl = document.getElementById('gpsFix');
+    const gpsSatsEl = document.getElementById('gpsSats');
+
+    if (gpsFixEl) {
+      gpsFixEl.textContent = d.msg.fix_type || '—';
+    }
+
+    if (gpsSatsEl) {
+      gpsSatsEl.textContent = d.msg.satellites_visible || '—';
+    }
+  } catch (e) {
+    log("❌ Error handling GPS message: " + e.message);
+    console.error("Error handling GPS:", e);
+  }
+}
+
+// Handle IMU messages
+function handleIMUMessage(d) {
+  try {
+    const imuTempEl = document.getElementById('imuTemp');
+    if (imuTempEl && d.msg.temperature) {
+      imuTempEl.textContent = d.msg.temperature.toFixed(1) + '°C';
+    }
+  } catch (e) {
+    log("❌ Error handling IMU message: " + e.message);
+    console.error("Error handling IMU:", e);
+  }
+}
+
+// Handle RC messages
+function handleRCMessage(d) {
+  try {
+    const rcSignalEl = document.getElementById('rcSignal');
+    if (rcSignalEl) {
+      const hasSignal = d.msg.channels && d.msg.channels.some(c => c > 1000);
+      rcSignalEl.textContent = hasSignal ? 'Есть сигнал' : 'Нет сигнала';
+      rcSignalEl.style.color = hasSignal ? 'var(--success)' : 'var(--danger)';
+    }
+  } catch (e) {
+    log("❌ Error handling RC message: " + e.message);
+    console.error("Error handling RC:", e);
+  }
+}
+
+// Handle self-check response
+function handleSelfCheckResponse(d) {
+  try {
+    const v = document.getElementById('check-selfcheck');
+    if (v) {
+      if (d.result) {
+        setCheckStatus('selfcheck', 'ok', 'OK');
+        const selfcheckEl = document.getElementById('selfcheck');
+        if (selfcheckEl) {
+          selfcheckEl.innerText = JSON.stringify(d.values, null, 2);
+        }
+        log("Selfcheck OK");
+      } else {
+        setCheckStatus('selfcheck', 'fail', 'Ошибка');
+        const selfcheckEl = document.getElementById('selfcheck');
+        if (selfcheckEl) {
+          selfcheckEl.innerText = "Ошибка selfcheck: " + (d.message || 'Неизвестная ошибка');
+        }
+        log("❌ Ошибка Selfcheck: " + (d.message || 'Неизвестная ошибка'));
+      }
+    }
+  } catch (e) {
+    log("❌ Error handling self-check response: " + e.message);
+    console.error("Error handling self-check:", e);
+  }
+}
+
+// Disconnect from ROS bridge
+function disconnect() {
+  if (STATE.socket) {
+    STATE.socket.close();
+    STATE.socket = null;
+  }
+
+  STATE.isConnecting = false;
+  STATE.reconnectAttempts = 0;
+  updateConnectionStatus(false);
+
+  if (STATE.cmdVelInterval) {
+    clearInterval(STATE.cmdVelInterval);
+    STATE.cmdVelInterval = null;
+  }
+
+  showPage('connect');
+  ['network','ros','video','telemetry','battery','selfcheck'].forEach(id => setCheckStatus(id, 'pending', '—'));
+  log("Отключено");
+}
+
+// Run self-check from connect page
+function runSelfCheckFromConnect() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    clog("❌ Сначала подключитесь к ROS Bridge");
+    return;
+  }
+
+  setCheckStatus('selfcheck', 'checking', 'Запрос...');
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/selfcheck",
+    args: {}
+  });
+  clog("Запрос Self-check отправлен");
+}
+
+// Subscribe to ROS topics
+function subscribe() {
+  const topics = [
+    "/mavros/local_position/pose",
+    "/mavros/battery",
+    "/mavros/state",
+    "/mavros/local_position/velocity_local",
+    "/mavros/global_position/global",
+    "/mavros/imu/data",
+    "/mavros/rc/in"
+  ];
+
+  topics.forEach(topic => {
+    sendWebSocketMessage({
+      op: "subscribe",
+      topic: topic
+    });
+  });
+}
+
+// Send WebSocket message with queueing when disconnected
+function sendWebSocketMessage(message) {
+  if (STATE.socket && STATE.socket.readyState === WebSocket.OPEN) {
+    try {
+      STATE.socket.send(JSON.stringify(message));
+      return true;
+    } catch (e) {
+      log("❌ Error sending WebSocket message: " + e.message);
+      console.error("WebSocket send error:", e);
+      return false;
+    }
+  } else {
+    // Queue the message if not connected
+    STATE.commandQueue.push(message);
+    log("⏳ Command queued (will send when connected)");
+    return false;
+  }
+}
+
+// Process command queue
+function processCommandQueue() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) return;
+
+  while (STATE.commandQueue.length > 0) {
+    const message = STATE.commandQueue.shift();
+    try {
+      STATE.socket.send(JSON.stringify(message));
+      log("✅ Sent queued command");
+    } catch (e) {
+      log("❌ Error sending queued command: " + e.message);
+      console.error("Error sending queued command:", e);
+      break;
+    }
+  }
+}
+
+// Validate numeric input
+function validateNumericInput(value, min, max, defaultValue) {
+  const num = parseFloat(value);
+  if (isNaN(num)) {
+    return defaultValue;
+  }
+
+  if (min !== undefined && num < min) {
+    return min;
+  }
+
+  if (max !== undefined && num > max) {
+    return max;
+  }
+
+  return num;
+}
+
+// Takeoff with input validation
+function takeoff() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const z = validateNumericInput(document.getElementById('navZ').value, 0.5, 10, 1.5);
+  const speed = validateNumericInput(document.getElementById('navSpeed').value, 0.1, 2, 0.5);
+
+  callNavigate(0, 0, z, speed, true);
+  log("Взлёт на " + z + " м (скорость: " + speed + " м/с)");
+}
+
+// Call navigate service
+function callNavigate(x, y, z, speed, auto_arm) {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/navigate",
+    args: {
+      x: x,
+      y: y,
+      z: z,
+      frame_id: "map",
+      auto_arm: !!auto_arm,
+      speed: speed || 0.5,
+      yaw: 0
+    }
+  });
+}
+
+// Navigate with input validation
+function navigate() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const x = validateNumericInput(document.getElementById('navX').value, -100, 100, 0);
+  const y = validateNumericInput(document.getElementById('navY').value, -100, 100, 0);
+  const z = validateNumericInput(document.getElementById('navZ').value, 0.5, 10, 1);
+  const speed = validateNumericInput(document.getElementById('navSpeed').value, 0.1, 2, 0.5);
+
+  callNavigate(x, y, z, speed, false);
+  log(`Навигация: X=${x}, Y=${y}, Z=${z} м (скорость: ${speed} м/с)`);
+}
+
+// Fly to global coordinates with input validation
+function flyGlobal() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const lat = validateNumericInput(document.getElementById('lat').value, -90, 90, 55.75);
+  const lon = validateNumericInput(document.getElementById('lon').value, -180, 180, 37.62);
+  const alt = validateNumericInput(document.getElementById('alt').value, 0.5, 100, 1);
+  const spd = validateNumericInput(document.getElementById('globalSpeed').value, 0.1, 5, 1);
+
+  sendWebSocketMessage({
+    op: "publish",
+    topic: "/navigate_global",
+    msg: {
+      latitude: lat,
+      longitude: lon,
+      altitude: alt,
+      speed: spd
+    }
+  });
+
+  log(`Полет по координатам: ${lat.toFixed(4)}, ${lon.toFixed(4)} (высота: ${alt} м, скорость: ${spd} м/с)`);
+}
+
+// Set altitude with input validation
+function setAltitude() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const altVal = validateNumericInput(document.getElementById('setAltVal').value, 0.5, 10, 1.5);
+  if (isNaN(altVal)) {
+    log("❌ Укажите корректную высоту");
+    return;
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/set_altitude",
+    args: {
+      frame_id: "map",
+      altitude: altVal
+    }
+  });
+
+  log("Установка высоты " + altVal + " м");
+}
+
+// Set yaw with input validation
+function setYaw() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const deg = validateNumericInput(document.getElementById('setYawVal').value, -180, 180, 0);
+  if (isNaN(deg)) {
+    log("❌ Укажите корректный курс (град)");
+    return;
+  }
+
+  const yawRad = deg * Math.PI / 180;
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/set_yaw",
+    args: {
+      frame_id: "map",
+      yaw: yawRad
+    }
+  });
+
+  log("Установка курса " + deg + "°");
+}
+
+// Release command
+function release() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/release",
+    args: {}
+  });
+
+  log("Release — остановка setpoint");
+}
+
+// Arm/disarm with confirmation
+function arm(value) {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  if (value) {
+    // Show confirmation for arming
+    if (!confirm("Вы уверены, что хотите вооружить дрон?")) {
+      log("Arm отменено пользователем");
+      return;
+    }
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/mavros/cmd/arming",
+    args: { value: !!value }
+  });
+
+  log(value ? "Arm" : "Disarm");
+}
+
+// Land command with confirmation
+function land() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  if (!confirm("Вы уверены, что хотите совершить посадку?")) {
+    log("Посадка отменена пользователем");
+    return;
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/land",
+    args: {}
+  });
+
+  log("Посадка");
+}
+
+// Self-check command
+function selfCheck() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/selfcheck",
+    args: {}
+  });
+
+  log("Запрос Self-check");
+}
+
+// Set flight mode
+function setFlightMode() {
+  if (!STATE.socket || STATE.socket.readyState !== WebSocket.OPEN) {
+    log("❌ Не подключено к ROS Bridge");
+    return;
+  }
+
+  const sel = document.getElementById('flightModeSelect');
+  const mode = sel ? sel.value : 'OFFBOARD';
+
+  if (mode === 'MANUAL' || mode === 'STABILIZED') {
+    if (!confirm(`Вы уверены, что хотите переключиться в режим ${mode}? Это может быть опасно.`)) {
+      log(`Переключение в режим ${mode} отменено`);
+      return;
+    }
+  }
+
+  sendWebSocketMessage({
+    op: "call_service",
+    service: "/mavros/set_mode",
+    args: { custom_mode: mode }
+  });
+
+  log("Режим: " + mode);
+}
+
+// Initialize the application when DOM is loaded
+document.addEventListener('DOMContentLoaded', init);{
   // Joystick controls have been removed as requested
 }
 
