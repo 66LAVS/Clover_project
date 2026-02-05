@@ -1114,6 +1114,25 @@ button.secondary:hover {
 
   <aside class="control-right">
     <div class="card control-card">
+      <h4><i class="fa-solid fa-satellite-dish"></i> GPS</h4>
+      <div class="row"><span>Фиксация</span><span class="val" id="gpsFix">—</span></div>
+      <div class="row"><span>Спутники</span><span class="val" id="gpsSats">—</span></div>
+    </div>
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-microchip"></i> IMU</h4>
+      <div class="row"><span>Температура</span><span class="val" id="imuTemp">—</span></div>
+    </div>
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-battery-half"></i> Батарея</h4>
+      <div id="batteryBox"><div id="batteryBar"></div></div>
+      <div class="row"><span>Заряд</span><span class="val" id="batteryText">—</span>%</div>
+      <div class="row"><span>Напряжение</span><span class="val" id="batteryVoltage">—</span></div>
+    </div>
+    <div class="card control-card">
+      <h4><i class="fa-solid fa-gamepad"></i> RC Сигнал</h4>
+      <div class="row"><span>Статус</span><span class="val" id="rcSignal">—</span></div>
+    </div>
+    <div class="card control-card">
       <h4><i class="fa-solid fa-book"></i> Документация</h4>
       <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">Автономный полёт, MAVROS, системы координат:</p>
       <a href="https://clover.coex.tech/ru/simple_offboard.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;">simple_offboard</a><br>
@@ -1497,6 +1516,34 @@ function connect(){
       batteryText.innerText=p.toFixed(0);
       batteryBar.style.width=p+"%";
       batteryBar.style.background=p>50?"#22c55e":p>20?"#facc15":"#ef4444";
+
+      // Update voltage display if element exists
+      const voltageEl = document.getElementById('batteryVoltage');
+      if(voltageEl && d.msg.voltage) voltageEl.textContent = d.msg.voltage.toFixed(1) + ' V';
+    }
+
+    // Add GPS sensor data handling
+    if(d.topic==="/mavros/global_position/global"){
+      const gpsFixEl = document.getElementById('gpsFix');
+      const gpsSatsEl = document.getElementById('gpsSats');
+      if(gpsFixEl) gpsFixEl.textContent = d.msg.fix_type || '—';
+      if(gpsSatsEl) gpsSatsEl.textContent = d.msg.satellites_visible || '—';
+    }
+
+    // Add IMU sensor data handling
+    if(d.topic==="/mavros/imu/data"){
+      const imuTempEl = document.getElementById('imuTemp');
+      if(imuTempEl && d.msg.temperature) imuTempEl.textContent = d.msg.temperature.toFixed(1) + '°C';
+    }
+
+    // Add RC signal status
+    if(d.topic==="/mavros/rc/in"){
+      const rcSignalEl = document.getElementById('rcSignal');
+      if(rcSignalEl) {
+        const hasSignal = d.msg.channels && d.msg.channels.some(c => c > 1000);
+        rcSignalEl.textContent = hasSignal ? 'Есть сигнал' : 'Нет сигнала';
+        rcSignalEl.style.color = hasSignal ? 'var(--success)' : 'var(--danger)';
+      }
     }
 
     if(d.op==="service_response" && d.service==="/selfcheck"){
@@ -1534,7 +1581,7 @@ function runSelfCheckFromConnect(){
 
 
 function subscribe(){
-  ["/mavros/local_position/pose","/mavros/battery","/mavros/state","/mavros/local_position/velocity_local"].forEach(t=>{
+  ["/mavros/local_position/pose","/mavros/battery","/mavros/state","/mavros/local_position/velocity_local","/mavros/global_position/global","/mavros/imu/data","/mavros/rc/in"].forEach(t=>{
     socket.send(JSON.stringify({op:"subscribe",topic:t}));
   });
 }
