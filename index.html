@@ -1058,17 +1058,6 @@ button.secondary:hover {
       </div>
       <span class="yaw-val" id="yawDeg">—°</span>
     </div>
-    <div class="card control-card">
-      <div class="control-section-title">Ручное управление</div>
-      <div class="joy-wrap">
-        <div id="joy1" class="joy"></div>
-        <span class="joy-label">Движение X/Y</span>
-      </div>
-      <div class="joy-wrap" style="margin-top:10px;">
-        <div id="joy2" class="joy"></div>
-        <span class="joy-label">Газ / Поворот</span>
-      </div>
-    </div>
   </aside>
 
   <section class="control-center">
@@ -1338,9 +1327,29 @@ function setCameraVideoSrc(){
   const cam = document.getElementById('cameraVideo');
   const placeholder = document.getElementById('cameraPlaceholder');
   const url = getVideoUrl();
-  if(!url){ if(placeholder) placeholder.style.display=''; if(cam) cam.style.display='none'; return; }
-  if(cam){ cam.src = url + (url.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now(); cam.style.display = ''; }
-  if(placeholder) placeholder.style.display = 'none';
+
+  if(!url){
+    if(placeholder) placeholder.style.display='';
+    if(cam) cam.style.display='none';
+    return;
+  }
+
+  if(cam){
+    cam.onerror = function() {
+      console.error("Camera video error: " + url);
+      if(placeholder) placeholder.textContent = 'Ошибка загрузки видеопотока: ' + url;
+      if(placeholder) placeholder.style.display = '';
+      cam.style.display = 'none';
+    };
+
+    cam.onload = function() {
+      console.log("Camera video loaded successfully");
+      if(placeholder) placeholder.style.display = 'none';
+      cam.style.display = '';
+    };
+
+    cam.src = url + (url.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
+  }
 }
 
 function connect(){
@@ -1382,6 +1391,8 @@ function connect(){
 
     const streamUrl = getVideoUrl();
     setCheckStatus('video','checking','Проверка...');
+
+    // Test main video stream
     const videoImg = document.getElementById('video');
     if(videoImg){
       videoImg.onerror = ()=>{ setCheckStatus('video','fail','Нет видеопотока'); };
@@ -1392,13 +1403,28 @@ function connect(){
         if(v && v.classList.contains('checking')) setCheckStatus('video','fail','Таймаут');
       }, 6000);
     }
+
+    // Test camera video stream with better error handling
     const cameraVideo = document.getElementById('cameraVideo');
     const cameraPlaceholder = document.getElementById('cameraPlaceholder');
     if(cameraVideo){
-      cameraVideo.onerror = ()=>{};
+      cameraVideo.onerror = function() {
+        console.error("Camera video error: " + streamUrl);
+        if(cameraPlaceholder) {
+          cameraPlaceholder.textContent = 'Ошибка загрузки видеопотока: ' + streamUrl;
+          cameraPlaceholder.style.color = 'var(--danger)';
+        }
+        cameraVideo.style.display = 'none';
+        if(cameraPlaceholder) cameraPlaceholder.style.display = '';
+      };
+
+      cameraVideo.onload = function() {
+        console.log("Camera video loaded successfully");
+        if(cameraPlaceholder) cameraPlaceholder.style.display = 'none';
+        cameraVideo.style.display = '';
+      };
+
       cameraVideo.src = streamUrl + (streamUrl.indexOf('?')>=0 ? '&' : '?') + '_=' + Date.now();
-      cameraVideo.style.display = '';
-      if(cameraPlaceholder) cameraPlaceholder.style.display = 'none';
     }
 
     setCheckStatus('telemetry','checking','Ожидание данных...');
@@ -1406,7 +1432,6 @@ function connect(){
     subscribe();
     log("Подключено");
     startJoysticks();
-    cmdVelInterval = setInterval(sendCmdVel,100);
     showPage("control");
   };
 
@@ -1476,9 +1501,17 @@ function connect(){
 
     if(d.op==="service_response" && d.service==="/selfcheck"){
       const v = document.getElementById('check-selfcheck');
-      if(v) setCheckStatus('selfcheck','ok','OK');
-      selfcheck.innerText=JSON.stringify(d.values,null,2);
-      log("Selfcheck OK");
+      if(v) {
+        if(d.result) {
+          setCheckStatus('selfcheck','ok','OK');
+          selfcheck.innerText=JSON.stringify(d.values,null,2);
+          log("Selfcheck OK");
+        } else {
+          setCheckStatus('selfcheck','fail','Ошибка');
+          selfcheck.innerText="Ошибка selfcheck: " + (d.message || 'Неизвестная ошибка');
+          log("❌ Ошибка Selfcheck: " + (d.message || 'Неизвестная ошибка'));
+        }
+      }
     }
   };
 }
@@ -1507,28 +1540,11 @@ function subscribe(){
 }
 
 function startJoysticks(){
-  const joy1El = document.getElementById('joy1'), joy2El = document.getElementById('joy2');
-  if(!joy1El || !joy2El) return;
-  const j1 = nipplejs.create({ zone: joy1El, mode: "static", position: { left: "50px", top: "50px" } });
-  const j2 = nipplejs.create({ zone: joy2El, mode: "static", position: { left: "50px", top: "50px" } });
-
-  j1.on("move",(_,d)=>{linX=d.vector.y;linY=d.vector.x;});
-  j1.on("end",()=>{linX=0;linY=0;});
-
-  j2.on("move",(_,d)=>{linZ=d.vector.y;angZ=d.vector.x;});
-  j2.on("end",()=>{linZ=0;angZ=0;});
+  // Joystick controls have been removed as requested
 }
 
 function sendCmdVel(){
-  if(!socket) return;
-  socket.send(JSON.stringify({
-    op:"publish",
-    topic:"/cmd_vel",
-    msg:{
-      linear:{x:linX,y:linY,z:linZ},
-      angular:{x:0,y:0,z:angZ}
-    }
-  }));
+  // Joystick controls have been removed as requested
 }
 
 function takeoff(){
