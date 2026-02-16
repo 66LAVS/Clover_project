@@ -982,7 +982,7 @@ button.secondary:hover {
       <label>ROS Bridge (WebSocket)</label>
       <input id="rosurl" value="ws://192.168.11.1:9090" placeholder="ws://192.168.11.1:9090">
       <label>Видеопоток (опционально)</label>
-      <input id="videoUrl" value="http://192.168.11.1:8080/stream" placeholder="http://192.168.11.1:8080/stream">
+      <input id="videoUrl" value="http://192.168.11.1:8080/stream?topic=%2Fmain_camera%2Fimage_raw&type=mjpeg&quality=60" placeholder="http://192.168.11.1:8080/stream?topic=/main_camera/image_raw&type=mjpeg&quality=60">
       <div class="connect-actions">
         <button id="btnConnect" onclick="connect()">Подключиться</button>
         <button id="btnDisconnect" class="secondary" onclick="disconnect()" style="display:none;">Отключиться</button>
@@ -1073,7 +1073,7 @@ button.secondary:hover {
 
   <section class="control-center">
     <div class="card" style="flex:1;min-height:0;display:flex;">
-      <img id="video" src="http://192.168.11.1:8080/stream" alt="Видеопоток">
+      <img id="video" src="" alt="Видеопоток">
     </div>
     <div class="control-bottom">
       <div class="card control-card">
@@ -1298,7 +1298,9 @@ function getVideoUrl(){
   const v = document.getElementById('videoUrl');
   if(v && v.value) return v.value.trim();
   const host = getHostFromWs(rosurl.value);
-  return host ? 'http://'+host+':8080/stream' : 'http://192.168.11.1:8080/stream';
+  const topic = encodeURIComponent('/main_camera/image_raw');
+  const params = `topic=${topic}&type=mjpeg&quality=60`;
+  return host ? `http://${host}:8080/stream?${params}` : `http://192.168.11.1:8080/stream?${params}`;
 }
 
 function showPage(id){
@@ -1476,9 +1478,15 @@ function connect(){
 
     if(d.op==="service_response" && d.service==="/selfcheck"){
       const v = document.getElementById('check-selfcheck');
-      if(v) setCheckStatus('selfcheck','ok','OK');
-      selfcheck.innerText=JSON.stringify(d.values,null,2);
-      log("Selfcheck OK");
+      if(d.result){
+        if(v) setCheckStatus('selfcheck','ok','OK');
+        selfcheck.innerText = JSON.stringify(d.values || {}, null, 2);
+        log("Selfcheck OK");
+      } else {
+        if(v) setCheckStatus('selfcheck','fail','Ошибка');
+        selfcheck.innerText = JSON.stringify(d.values || d, null, 2);
+        log("Selfcheck FAIL");
+      }
     }
   };
 }
@@ -1618,6 +1626,7 @@ function land(){
 
 function selfCheck(){
   if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  setCheckStatus('selfcheck','checking','Запрос...');
   socket.send(JSON.stringify({ op: "call_service", service: "/selfcheck", args: {} }));
   log("Запрос Self-check");
 }
