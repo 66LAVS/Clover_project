@@ -3,49 +3,78 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clover Mission Planner</title>
-  <link rel="icon" type="image/png" href="logo.png" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <title>Clover Mission Control</title>
+
+  <!-- OpenLayers вместо Leaflet -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v9.2.4/ol.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ol@v9.2.4/dist/ol.js"></script>
+
   <style>
     :root {
-      --bg: #0b0f14;
-      --card: #121922;
-      --line: #263242;
-      --text: #dce6f3;
-      --muted: #95a6ba;
-      --accent: #2c8cff;
-      --danger: #e0565b;
-      --ok: #57c487;
+      --bg: #0b1118;
+      --card: #121b26;
+      --line: #253447;
+      --txt: #d8e5f4;
+      --muted: #8ea3ba;
+      --accent: #2b8cff;
+      --ok: #52c57f;
+      --err: #e45a63;
+      --warn: #ffb347;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
-      color: var(--text);
+      color: var(--txt);
       font-family: Inter, Segoe UI, Arial, sans-serif;
     }
     header {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
       position: sticky;
       top: 0;
-      background: rgba(11,15,20,.95);
+      z-index: 20;
+      background: rgba(11, 17, 24, 0.94);
       backdrop-filter: blur(8px);
-      z-index: 5;
     }
-    .status { font-size: 13px; color: var(--muted); }
-    .status b { color: var(--text); }
+    .status { color: var(--muted); font-size: 13px; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #0f1722;
+      position: sticky;
+      top: 57px;
+      z-index: 18;
+    }
+    .tab {
+      border: 1px solid var(--line);
+      background: #121b26;
+      color: var(--txt);
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      background: rgba(43, 140, 255, 0.15);
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
     .layout {
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-columns: 370px 1fr;
       gap: 14px;
       padding: 14px;
-      height: calc(100vh - 62px);
+      height: calc(100vh - 108px);
     }
     .panel {
       overflow: auto;
@@ -61,38 +90,34 @@
       padding: 12px;
     }
     h3 { margin: 0 0 10px; font-size: 16px; }
-    label {
-      font-size: 12px;
-      color: var(--muted);
-      margin: 8px 0 4px;
-      display: block;
-    }
+    h4 { margin: 0 0 8px; font-size: 14px; }
+    label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 12px; }
     input, select, button {
       width: 100%;
-      padding: 10px;
       border-radius: 8px;
       border: 1px solid var(--line);
-      background: #0d141d;
-      color: var(--text);
+      background: #0d1520;
+      color: var(--txt);
+      padding: 9px 10px;
     }
     button {
       background: var(--accent);
       border-color: var(--accent);
-      font-weight: 600;
       cursor: pointer;
+      font-weight: 600;
       margin-top: 8px;
     }
     button.secondary {
-      background: #1a2431;
+      background: #1a2737;
       border-color: var(--line);
     }
     button.danger {
-      background: var(--danger);
-      border-color: var(--danger);
+      background: var(--err);
+      border-color: var(--err);
     }
-    button:disabled { opacity: .5; cursor: not-allowed; }
     .row { display: flex; gap: 8px; }
-    .map-wrap {
+
+    #mapPage .map-wrap {
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 12px;
@@ -101,31 +126,56 @@
       flex-direction: column;
       gap: 10px;
       min-width: 0;
+      min-height: 0;
     }
-    #map { height: 100%; min-height: 420px; border-radius: 10px; overflow: hidden; }
-    .hint { font-size: 12px; color: var(--muted); line-height: 1.35; }
-    .points-list {
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 420px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .list {
       font-size: 12px;
       color: var(--muted);
-      max-height: 165px;
-      overflow: auto;
+      background: #0d1520;
       border: 1px dashed var(--line);
       border-radius: 8px;
       padding: 8px;
+      max-height: 180px;
+      overflow: auto;
       line-height: 1.45;
-      background: #0d141d;
     }
     #log {
-      background: #0d141d;
+      background: #0d1520;
       border: 1px solid var(--line);
       border-radius: 8px;
-      height: 170px;
+      height: 180px;
       overflow: auto;
       padding: 8px;
       font-family: Consolas, monospace;
       font-size: 12px;
-      color: #bcd0e7;
     }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #131f2e; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .err { color: var(--err); font-weight: 600; }
+    .warn { color: var(--warn); font-weight: 600; }
+
     @media (max-width: 1000px) {
       .layout { grid-template-columns: 1fr; height: auto; }
       #map { min-height: 360px; }
@@ -134,110 +184,179 @@
 </head>
 <body>
   <header>
-    <div><b>Clover Mission Planner</b> · полёт по траектории Alpine Quest</div>
-    <div class="status" id="topStatus">Статус: <b>Отключено</b></div>
+    <div><b>Clover Mission Control</b> · OpenLayers + OSM</div>
+    <div class="status" id="topStatus">Статус: Отключено</div>
   </header>
 
-  <div class="layout">
-    <section class="panel">
-      <div class="card">
-        <h3>1) Подключение</h3>
-        <label>ROS Bridge (WebSocket)</label>
-        <input id="rosUrl" value="ws://192.168.11.1:9090" />
-        <div class="row">
-          <button onclick="connectRos()">Подключиться</button>
-          <button class="secondary" onclick="disconnectRos()">Отключить</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>2) Параметры миссии</h3>
-        <label>Высота полёта (м)</label>
-        <input id="cruiseAlt" type="number" step="0.1" value="12" />
-
-        <label>Скорость полёта (м/с)</label>
-        <input id="cruiseSpeed" type="number" step="0.1" value="3" />
-
-        <label>Высота снижения в конечной точке (м)</label>
-        <input id="descentAlt" type="number" step="0.1" value="3" />
-
-        <label>Скорость снижения (м/с)</label>
-        <input id="descentSpeed" type="number" step="0.1" value="1" />
-
-        <label>Действие в конечной точке</label>
-        <select id="endAction">
-          <option value="drop_continue">Команда оператору: сброс, затем возврат</option>
-          <option value="manual_stop">Переход на ручное управление и стоп миссии</option>
-        </select>
-
-        <label>После возврата</label>
-        <select id="afterReturn">
-          <option value="hover">Зависнуть в последней точке</option>
-          <option value="land">Посадка</option>
-        </select>
-      </div>
-
-      <div class="card">
-        <h3>3) Маршрут (5 промежуточных + конечная)</h3>
-        <p class="hint">Клик по карте: сначала ставятся точки WP1..WP5, затем END. Импорт из Alpine Quest — GPX.</p>
-        <input id="gpxFile" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" />
-        <div class="row">
-          <button class="secondary" onclick="importGpx()">Импорт GPX</button>
-          <button class="secondary" onclick="clearRoute()">Очистить</button>
-        </div>
-        <button class="secondary" onclick="buildRoundTripVisual()">Построить туда-обратно (визуально)</button>
-        <div class="points-list" id="pointsList">Точки ещё не заданы.</div>
-      </div>
-
-      <div class="card">
-        <h3>4) Миссия</h3>
-        <div class="row">
-          <button onclick="startMission()">Старт миссии</button>
-          <button class="danger" onclick="stopMission('Остановлено оператором')">Стоп миссии</button>
-        </div>
-        <button class="secondary" onclick="continueAfterOperatorAction()">Продолжить после действия оператора</button>
-        <button class="danger" onclick="emergencyLand()">Аварийная посадка</button>
-      </div>
-
-      <div class="card">
-        <h3>Телеметрия / безопасность</h3>
-        <div class="hint" id="telemetryBox">
-          GPS: —<br>
-          Fix: —<br>
-          Режим: —<br>
-          Миссия: —
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Журнал</h3>
-        <div id="log"></div>
-      </div>
-    </section>
-
-    <section class="map-wrap">
-      <div class="hint">
-        Карта OSM. Сценарий миссии: <b>взлёт → WP1..WP5 → END (снижение) → обратный путь WP5..WP1</b>.<br>
-        При потере GPS: миссия останавливается, выполняется переход на ручное управление.
-      </div>
-      <div id="map"></div>
-    </section>
+  <div class="tabs">
+    <button class="tab active" onclick="showPage('mainPage', this)">Миссия</button>
+    <button class="tab" onclick="showPage('mapPage', this)">Карта</button>
+    <button class="tab" onclick="showPage('errorsPage', this)">Ошибки</button>
+    <button class="tab" onclick="showPage('batteryPage', this)">Батарея и дрон</button>
   </div>
 
+  <section id="mainPage" class="page active">
+    <div class="layout">
+      <aside class="panel">
+        <div class="card">
+          <h3>1) Подключение</h3>
+          <label>ROS Bridge URL</label>
+          <input id="rosUrl" value="ws://192.168.11.1:9090" />
+          <div class="row">
+            <button onclick="connectRos()">Подключиться</button>
+            <button class="secondary" onclick="disconnectRos()">Отключить</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>2) Параметры миссии</h3>
+          <label>Высота полёта (м)</label>
+          <input id="cruiseAlt" type="number" value="12" step="0.1" />
+
+          <label>Скорость полёта (м/с)</label>
+          <input id="cruiseSpeed" type="number" value="3" step="0.1" />
+
+          <label>Высота снижения в END (м)</label>
+          <input id="descentAlt" type="number" value="3" step="0.1" />
+
+          <label>Скорость снижения (м/с)</label>
+          <input id="descentSpeed" type="number" value="1" step="0.1" />
+
+          <label>Действие в END</label>
+          <select id="endAction">
+            <option value="drop_continue">Команда оператору: действие и возврат</option>
+            <option value="manual_stop">Передача на ручное управление и стоп</option>
+          </select>
+
+          <label>После возврата</label>
+          <select id="afterReturn">
+            <option value="hover">Зависнуть</option>
+            <option value="land">Посадка</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <h3>3) Миссия</h3>
+          <div class="row">
+            <button onclick="startMission()">Старт</button>
+            <button class="danger" onclick="stopMission('Остановлено оператором')">Стоп</button>
+          </div>
+          <button class="secondary" onclick="continueAfterOperatorAction()">Продолжить после действия оператора</button>
+          <button class="danger" onclick="emergencyLand()">Аварийная посадка</button>
+          <div class="hint" style="margin-top:8px" id="missionState">Состояние: idle</div>
+        </div>
+
+        <div class="card">
+          <h3>Журнал</h3>
+          <div id="log"></div>
+        </div>
+      </aside>
+
+      <section class="card">
+        <h3>Краткая телеметрия</h3>
+        <div id="telemetryBox" class="hint">Нет данных.</div>
+      </section>
+    </div>
+  </section>
+
+  <section id="mapPage" class="page">
+    <div class="layout">
+      <aside class="panel">
+        <div class="card">
+          <h3>Маршрут</h3>
+          <label>Количество промежуточных точек WP</label>
+          <input id="maxWp" type="number" value="5" min="1" step="1" />
+          <p class="hint">Теперь можно задавать больше точек: WP1..WPN + END.</p>
+
+          <label>Импорт из Alpine Quest (GPX)</label>
+          <input id="gpxFile" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" />
+          <div class="row">
+            <button class="secondary" onclick="importGpx()">Импорт GPX</button>
+            <button class="secondary" onclick="clearRoute()">Очистить</button>
+          </div>
+          <div class="row">
+            <button class="secondary" onclick="removeLastPoint()">Удалить последнюю точку</button>
+            <button class="secondary" onclick="buildRoundTripVisual()">Показать обратный путь</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Точки</h4>
+          <div class="list" id="pointsList">Точки не заданы.</div>
+        </div>
+      </aside>
+
+      <section class="map-wrap">
+        <div class="hint">Клик по карте: сначала WP1..WPN, затем END.</div>
+        <div id="map"></div>
+      </section>
+    </div>
+  </section>
+
+  <section id="errorsPage" class="page" style="padding:14px;">
+    <div class="card">
+      <h3>Мониторинг ошибок и стабильности</h3>
+      <p class="hint">Если всё стабильно — статус <span class="ok">OK</span>. При проблемах показывается ошибка и возможное решение.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Проверка</th>
+            <th>Статус</th>
+            <th>Детали</th>
+            <th>Возможное решение</th>
+          </tr>
+        </thead>
+        <tbody id="diagTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="batteryPage" class="page" style="padding:14px;">
+    <div class="card">
+      <h3>Батарея и данные дрона</h3>
+      <table>
+        <tbody>
+          <tr><th>Батарея %</th><td id="dBatteryPercent">—</td></tr>
+          <tr><th>Напряжение (V)</th><td id="dBatteryVoltage">—</td></tr>
+          <tr><th>Ток (A)</th><td id="dBatteryCurrent">—</td></tr>
+          <tr><th>Режим полёта</th><td id="dMode">—</td></tr>
+          <tr><th>Armed</th><td id="dArmed">—</td></tr>
+          <tr><th>Connected</th><td id="dConnected">—</td></tr>
+          <tr><th>GPS fix status</th><td id="dGpsFix">—</td></tr>
+          <tr><th>GPS (lat, lon, alt)</th><td id="dGps">—</td></tr>
+          <tr><th>Серийный номер / UID</th><td id="dSerial">Недоступно</td></tr>
+          <tr><th>Тип автопилота</th><td id="dAutopilot">—</td></tr>
+          <tr><th>Тип транспортного средства</th><td id="dVehicleType">—</td></tr>
+        </tbody>
+      </table>
+      <button class="secondary" onclick="requestVehicleInfo()">Запросить данные FCU/серийный номер</button>
+      <p class="hint">Примечание: серийный номер может не предоставляться стандартными топиками MAVROS. Тогда будет показано «Недоступно».</p>
+    </div>
+  </section>
+
   <script>
+    // =========================
+    // Глобальное состояние приложения
+    // =========================
     let socket = null;
-    let map, routeLine = null;
-    let waypointMarkers = [];
-    let endMarker = null;
-    let reverseLine = null;
+    let map, vectorSource, vectorLayer;
+    let forwardFeature = null, reverseFeature = null;
 
     const state = {
-      waypoints: [], // [{lat, lon}] ровно 5
-      endPoint: null, // {lat, lon}
-      currentGps: null, // {lat, lon, alt}
+      waypoints: [],               // массив промежуточных точек [{lat, lon}]
+      endPoint: null,              // конечная точка {lat, lon}
+      currentGps: null,            // текущая GPS позиция дрона
       gpsFixStatus: null,
-      flightMode: '—',
-      lastGpsFixTimestamp: 0,
+      lastGpsTimestamp: 0,
+      battery: { percentage: null, voltage: null, current: null },
+      fcu: {
+        mode: '—',
+        armed: null,
+        connected: null,
+        serial: 'Недоступно',
+        autopilot: '—',
+        vehicleType: '—'
+      },
       mission: {
         running: false,
         stopRequested: false,
@@ -247,47 +366,91 @@
       }
     };
 
+    // Централизованный реестр диагностики с возможными решениями
+    const diagnostics = {
+      websocket: { label: 'WebSocket / ROS Bridge', status: 'CHECK', details: 'Нет подключения', solution: 'Проверьте URL ws://... и сеть Wi‑Fi дрона' },
+      gpsStream: { label: 'Поток GPS', status: 'CHECK', details: 'Нет данных GPS', solution: 'Проверьте антенну GPS и topic /mavros/global_position/global' },
+      gpsFix: { label: 'GPS Fix', status: 'CHECK', details: 'Fix неизвестен', solution: 'Дождитесь спутников или выйдите на открытую местность' },
+      battery: { label: 'Батарея', status: 'CHECK', details: 'Нет данных батареи', solution: 'Проверьте /mavros/battery и питание' },
+      route: { label: 'Маршрут', status: 'CHECK', details: 'Маршрут не готов', solution: 'Задайте WP и END на карте или импортируйте GPX' },
+      mission: { label: 'Миссия', status: 'OK', details: 'Ожидание запуска', solution: '—' },
+      services: { label: 'ROS сервисы', status: 'CHECK', details: 'Пока не проверены', solution: 'Проверьте доступность /navigate_global, /land, /mavros/set_mode' }
+    };
+
+    function setDiag(key, status, details, solution) {
+      if (!diagnostics[key]) return;
+      diagnostics[key].status = status;
+      if (details) diagnostics[key].details = details;
+      if (solution) diagnostics[key].solution = solution;
+      renderDiagnosticsTable();
+    }
+
+    function renderDiagnosticsTable() {
+      const body = document.getElementById('diagTableBody');
+      if (!body) return;
+      body.innerHTML = '';
+      Object.values(diagnostics).forEach(item => {
+        const tr = document.createElement('tr');
+        const cls = item.status === 'OK' ? 'ok' : (item.status === 'ERROR' ? 'err' : 'warn');
+        tr.innerHTML = `
+          <td>${item.label}</td>
+          <td class="${cls}">${item.status}</td>
+          <td>${item.details}</td>
+          <td>${item.solution}</td>
+        `;
+        body.appendChild(tr);
+      });
+    }
+
     function log(msg) {
       const el = document.getElementById('log');
+      if (!el) return;
       const t = new Date().toLocaleTimeString();
       el.innerHTML += `[${t}] ${msg}<br>`;
       el.scrollTop = el.scrollHeight;
-      refreshTelemetryBox();
+    }
+
+    function showPage(pageId, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (pageId === 'mapPage' && map) map.updateSize();
     }
 
     function setTopStatus(text) {
-      document.getElementById('topStatus').innerHTML = `Статус: <b>${text}</b>`;
+      document.getElementById('topStatus').textContent = `Статус: ${text}`;
     }
 
-    function refreshTelemetryBox() {
-      const g = state.currentGps;
-      const gpsText = g ? `${g.lat.toFixed(6)}, ${g.lon.toFixed(6)}, alt ${g.alt.toFixed(1)} м` : '—';
-      const fix = state.gpsFixStatus === null ? '—' : state.gpsFixStatus;
-      document.getElementById('telemetryBox').innerHTML =
-        `GPS: ${gpsText}<br>` +
-        `Fix: ${fix}<br>` +
-        `Режим: ${state.flightMode}<br>` +
-        `Миссия: ${state.mission.step}`;
-    }
-
+    // =========================
+    // OpenLayers: инициализация карты и отрисовка маршрута
+    // =========================
     function initMap() {
-      map = L.map('map').setView([55.75, 37.62], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
-      }).addTo(map);
+      vectorSource = new ol.source.Vector();
+      vectorLayer = new ol.layer.Vector({ source: vectorSource });
 
-      map.on('click', (e) => {
-        const p = { lat: e.latlng.lat, lon: e.latlng.lng };
+      map = new ol.Map({
+        target: 'map',
+        layers: [
+          new ol.layer.Tile({ source: new ol.source.OSM() }),
+          vectorLayer
+        ],
+        view: new ol.View({ center: ol.proj.fromLonLat([37.62, 55.75]), zoom: 13 })
+      });
 
-        if (state.waypoints.length < 5) {
+      map.on('singleclick', (evt) => {
+        const [lon, lat] = ol.proj.toLonLat(evt.coordinate);
+        const p = { lat, lon };
+
+        const maxWp = Math.max(1, parseInt(document.getElementById('maxWp').value || '5', 10));
+        if (state.waypoints.length < maxWp) {
           state.waypoints.push(p);
-          log(`Добавлена промежуточная точка WP${state.waypoints.length}`);
+          log(`Добавлена WP${state.waypoints.length}`);
         } else if (!state.endPoint) {
           state.endPoint = p;
-          log('Добавлена конечная точка END');
+          log('Добавлена END точка');
         } else {
-          log('Маршрут уже заполнен: 5 промежуточных + END. Нажмите "Очистить".');
+          log('Маршрут заполнен. Удалите последнюю точку или очистите маршрут.');
           return;
         }
 
@@ -295,39 +458,73 @@
       });
     }
 
+    function pointFeature(lon, lat, label, color) {
+      const f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])) });
+      f.setStyle(new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: 6,
+          fill: new ol.style.Fill({ color }),
+          stroke: new ol.style.Stroke({ color: '#0b1118', width: 2 })
+        }),
+        text: new ol.style.Text({
+          text: label,
+          offsetY: -14,
+          fill: new ol.style.Fill({ color: '#ffffff' }),
+          stroke: new ol.style.Stroke({ color: '#0b1118', width: 3 })
+        })
+      }));
+      return f;
+    }
+
+    function lineFeature(points, color, dash = null) {
+      const coords = points.map(p => ol.proj.fromLonLat([p.lon, p.lat]));
+      const f = new ol.Feature({ geometry: new ol.geom.LineString(coords) });
+      f.setStyle(new ol.style.Style({
+        stroke: new ol.style.Stroke({ color, width: 3, lineDash: dash || undefined })
+      }));
+      return f;
+    }
+
     function redrawRoute() {
-      waypointMarkers.forEach(m => map.removeLayer(m));
-      waypointMarkers = [];
-      if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
-      if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-      if (reverseLine) { map.removeLayer(reverseLine); reverseLine = null; }
+      vectorSource.clear();
+      forwardFeature = null;
+      reverseFeature = null;
 
-      state.waypoints.forEach((p, i) => {
-        const marker = L.marker([p.lat, p.lon]).addTo(map).bindTooltip(`WP${i + 1}`, { permanent: true, direction: 'top' });
-        waypointMarkers.push(marker);
-      });
+      state.waypoints.forEach((p, idx) => vectorSource.addFeature(pointFeature(p.lon, p.lat, `WP${idx + 1}`, '#2b8cff')));
+      if (state.endPoint) vectorSource.addFeature(pointFeature(state.endPoint.lon, state.endPoint.lat, 'END', '#e45a63'));
 
-      if (state.endPoint) {
-        endMarker = L.marker([state.endPoint.lat, state.endPoint.lon]).addTo(map).bindTooltip('END', { permanent: true, direction: 'top' });
+      const forward = [...state.waypoints];
+      if (state.endPoint) forward.push(state.endPoint);
+      if (forward.length >= 2) {
+        forwardFeature = lineFeature(forward, '#2b8cff');
+        vectorSource.addFeature(forwardFeature);
       }
 
-      const forward = state.waypoints.map(p => [p.lat, p.lon]);
-      if (state.endPoint) forward.push([state.endPoint.lat, state.endPoint.lon]);
-      if (forward.length >= 2) routeLine = L.polyline(forward, { color: '#2c8cff', weight: 3 }).addTo(map);
-
       updatePointsList();
+      updateRouteDiagnostic();
+      fitRoute();
     }
 
     function buildRoundTripVisual() {
-      if (reverseLine) { map.removeLayer(reverseLine); reverseLine = null; }
-      if (state.waypoints.length !== 5 || !state.endPoint) {
-        log('Нужно ровно 5 промежуточных точек и 1 конечная.');
+      if (!state.endPoint || !state.waypoints.length) {
+        log('Сначала задайте WP и END.');
         return;
       }
-      const back = [...state.waypoints].reverse().map(p => [p.lat, p.lon]);
-      const route = [[state.endPoint.lat, state.endPoint.lon], ...back];
-      reverseLine = L.polyline(route, { color: '#57c487', dashArray: '6,6', weight: 3 }).addTo(map);
-      log('Показан обратный маршрут по тем же точкам.');
+      if (reverseFeature) vectorSource.removeFeature(reverseFeature);
+      const back = [...state.waypoints].reverse();
+      reverseFeature = lineFeature([state.endPoint, ...back], '#52c57f', [8, 6]);
+      vectorSource.addFeature(reverseFeature);
+      log('Обратный путь показан.');
+    }
+
+    function fitRoute() {
+      const points = [...state.waypoints];
+      if (state.endPoint) points.push(state.endPoint);
+      if (!points.length) return;
+
+      const extent = ol.extent.createEmpty();
+      points.forEach(p => ol.extent.extend(extent, ol.proj.fromLonLat([p.lon, p.lat])));
+      map.getView().fit(extent, { padding: [30, 30, 30, 30], maxZoom: 17, duration: 250 });
     }
 
     function clearRoute() {
@@ -337,49 +534,80 @@
       log('Маршрут очищен.');
     }
 
+    function removeLastPoint() {
+      if (state.endPoint) {
+        state.endPoint = null;
+        redrawRoute();
+        log('Удалена END точка.');
+        return;
+      }
+      if (state.waypoints.length) {
+        const idx = state.waypoints.length;
+        state.waypoints.pop();
+        redrawRoute();
+        log(`Удалена WP${idx}.`);
+        return;
+      }
+      log('Нет точек для удаления.');
+    }
+
     function updatePointsList() {
       const el = document.getElementById('pointsList');
+      if (!el) return;
       if (!state.waypoints.length && !state.endPoint) {
-        el.innerHTML = 'Точки ещё не заданы.';
+        el.innerHTML = 'Точки не заданы.';
         return;
       }
       let html = '';
-      state.waypoints.forEach((p, i) => {
-        html += `WP${i+1}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}<br>`;
-      });
+      state.waypoints.forEach((p, i) => html += `WP${i + 1}: ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}<br>`);
       if (state.endPoint) html += `<b>END:</b> ${state.endPoint.lat.toFixed(6)}, ${state.endPoint.lon.toFixed(6)}`;
       el.innerHTML = html;
     }
 
     function importGpx() {
-      const f = document.getElementById('gpxFile').files[0];
-      if (!f) { log('Выберите GPX файл.'); return; }
+      const file = document.getElementById('gpxFile').files[0];
+      if (!file) { log('Выберите GPX файл.'); return; }
 
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const xml = new DOMParser().parseFromString(reader.result, 'application/xml');
-          const trkpts = [...xml.querySelectorAll('trkpt')].map(n => ({ lat: parseFloat(n.getAttribute('lat')), lon: parseFloat(n.getAttribute('lon')) }));
-          const wpts = [...xml.querySelectorAll('wpt')].map(n => ({ lat: parseFloat(n.getAttribute('lat')), lon: parseFloat(n.getAttribute('lon')) }));
+          const trkpts = [...xml.querySelectorAll('trkpt')].map(n => ({ lat: +n.getAttribute('lat'), lon: +n.getAttribute('lon') }));
+          const wpts = [...xml.querySelectorAll('wpt')].map(n => ({ lat: +n.getAttribute('lat'), lon: +n.getAttribute('lon') }));
           const pts = trkpts.length ? trkpts : wpts;
 
-          if (pts.length < 6) {
-            log('В GPX нужно минимум 6 точек: 5 промежуточных + конечная.');
+          if (pts.length < 2) {
+            log('В GPX нужно минимум 2 точки.');
             return;
           }
 
-          state.waypoints = pts.slice(0, 5);
-          state.endPoint = pts[5];
+          const maxWp = Math.max(1, parseInt(document.getElementById('maxWp').value || '5', 10));
+          const wpCount = Math.min(maxWp, pts.length - 1);
+          state.waypoints = pts.slice(0, wpCount);
+          state.endPoint = pts[wpCount] || null;
+
           redrawRoute();
-          map.fitBounds(L.latLngBounds(pts.slice(0, 6).map(p => [p.lat, p.lon])));
-          log('GPX импортирован (WP1..WP5 и END).');
+          buildRoundTripVisual();
+          log(`GPX импортирован: WP=${state.waypoints.length}, END=${state.endPoint ? 'да' : 'нет'}.`);
         } catch (e) {
-          log('Ошибка импорта GPX: ' + e.message);
+          log('Ошибка GPX: ' + e.message);
+          setDiag('route', 'ERROR', 'Ошибка парсинга GPX', 'Проверьте формат GPX из Alpine Quest');
         }
       };
-      reader.readAsText(f);
+      reader.readAsText(file);
     }
 
+    function updateRouteDiagnostic() {
+      if (state.waypoints.length >= 1 && state.endPoint) {
+        setDiag('route', 'OK', `Маршрут готов: ${state.waypoints.length} WP + END`, '—');
+      } else {
+        setDiag('route', 'CHECK', 'Недостаточно точек', 'Задайте WP и END на карте');
+      }
+    }
+
+    // =========================
+    // ROS/WebSocket транспорт и обработка телеметрии
+    // =========================
     function connectRos() {
       const url = document.getElementById('rosUrl').value.trim();
       if (!url) return;
@@ -389,47 +617,31 @@
         socket = new WebSocket(url);
       } catch (e) {
         log('Ошибка WebSocket: ' + e.message);
+        setDiag('websocket', 'ERROR', e.message, 'Проверьте формат ws://host:9090');
         return;
       }
 
       socket.onopen = () => {
         setTopStatus('Подключено');
         log('ROS Bridge подключен.');
+        setDiag('websocket', 'OK', 'Соединение установлено', '—');
+        setDiag('services', 'OK', 'Ожидание ответов сервисов', '—');
         subscribeTopics();
+        requestVehicleInfo();
       };
 
       socket.onclose = () => {
         setTopStatus('Отключено');
         log('Соединение закрыто.');
+        setDiag('websocket', 'ERROR', 'Соединение закрыто', 'Проверьте питание RPi и ROS Bridge');
       };
 
-      socket.onerror = () => log('Ошибка WebSocket.');
-
-      socket.onmessage = (e) => {
-        let d;
-        try { d = JSON.parse(e.data); } catch { return; }
-
-        if (d.topic === '/mavros/global_position/global') {
-          const m = d.msg;
-          state.currentGps = { lat: +m.latitude, lon: +m.longitude, alt: +m.altitude };
-          state.lastGpsFixTimestamp = Date.now();
-          refreshTelemetryBox();
-        }
-
-        if (d.topic === '/mavros/global_position/raw/fix') {
-          const s = d.msg && d.msg.status ? d.msg.status.status : null;
-          state.gpsFixStatus = s;
-          if (typeof s === 'number' && s < 0) {
-            onGpsLost('GPS status < 0');
-          }
-          refreshTelemetryBox();
-        }
-
-        if (d.topic === '/mavros/state') {
-          state.flightMode = d.msg.mode || '—';
-          refreshTelemetryBox();
-        }
+      socket.onerror = () => {
+        log('Ошибка WebSocket.');
+        setDiag('websocket', 'ERROR', 'Ошибка канала WebSocket', 'Проверьте сеть и firewall');
       };
+
+      socket.onmessage = onRosMessage;
     }
 
     function disconnectRos() {
@@ -440,44 +652,129 @@
       setTopStatus('Отключено');
     }
 
-    function sendRos(obj) {
+    function sendRos(payload) {
       if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Нет подключения к ROS Bridge');
-      socket.send(JSON.stringify(obj));
+      socket.send(JSON.stringify(payload));
     }
 
     function subscribeTopics() {
-      ['/mavros/global_position/global', '/mavros/global_position/raw/fix', '/mavros/state'].forEach(t => {
-        sendRos({ op: 'subscribe', topic: t });
-      });
+      [
+        '/mavros/global_position/global',
+        '/mavros/global_position/raw/fix',
+        '/mavros/state',
+        '/mavros/battery',
+        '/mavros/statustext/recv'
+      ].forEach(topic => sendRos({ op: 'subscribe', topic }));
     }
 
-    function callService(service, args) {
-      sendRos({ op: 'call_service', service, args: args || {} });
-    }
-
-    function setManualMode() {
+    function requestVehicleInfo() {
       try {
-        callService('/release', {});
-        callService('/mavros/set_mode', { custom_mode: 'POSITION' });
+        sendRos({ op: 'call_service', service: '/mavros/vehicle_info_get', args: {} });
       } catch (e) {
-        log('Не удалось перейти в ручное/position: ' + e.message);
+        log('Не удалось запросить vehicle_info: ' + e.message);
       }
     }
 
-    function onGpsLost(reason) {
-      if (!state.mission.running) return;
-      stopMission(`Потеря GPS: ${reason}`);
-      setManualMode();
-      alert('Потеря GPS! Миссия остановлена. Переход на ручное управление.');
+    function onRosMessage(e) {
+      let d;
+      try { d = JSON.parse(e.data); } catch { return; }
+
+      if (d.topic === '/mavros/global_position/global') {
+        state.currentGps = { lat: +d.msg.latitude, lon: +d.msg.longitude, alt: +d.msg.altitude };
+        state.lastGpsTimestamp = Date.now();
+        setDiag('gpsStream', 'OK', 'GPS поток поступает', '—');
+      }
+
+      if (d.topic === '/mavros/global_position/raw/fix') {
+        const s = d.msg && d.msg.status ? d.msg.status.status : null;
+        state.gpsFixStatus = s;
+        if (typeof s === 'number' && s >= 0) {
+          setDiag('gpsFix', 'OK', `Fix status=${s}`, '—');
+        } else {
+          setDiag('gpsFix', 'ERROR', `Fix status=${s}`, 'Дождитесь стабильного GPS фиксирования');
+          if (state.mission.running) onGpsLost('GPS fix потерян');
+        }
+      }
+
+      if (d.topic === '/mavros/state') {
+        state.fcu.mode = d.msg.mode || '—';
+        state.fcu.armed = !!d.msg.armed;
+        state.fcu.connected = !!d.msg.connected;
+      }
+
+      if (d.topic === '/mavros/battery') {
+        const msg = d.msg || {};
+        const percent = typeof msg.percentage === 'number' ? msg.percentage * 100 : null;
+        state.battery.percentage = percent;
+        state.battery.voltage = msg.voltage ?? null;
+        state.battery.current = msg.current ?? null;
+
+        if (percent === null) {
+          setDiag('battery', 'CHECK', 'Данные батареи неполные', 'Проверьте топик /mavros/battery');
+        } else if (percent < 20) {
+          setDiag('battery', 'ERROR', `Низкий заряд ${percent.toFixed(1)}%`, 'Прервите миссию и замените батарею');
+        } else {
+          setDiag('battery', 'OK', `Заряд ${percent.toFixed(1)}%`, '—');
+        }
+      }
+
+      if (d.topic === '/mavros/statustext/recv') {
+        const text = d.msg && d.msg.text ? d.msg.text : '';
+        if (text) log(`FCU: ${text}`);
+      }
+
+      // Ответы сервисов (в т.ч. vehicle_info_get)
+      if (d.op === 'service_response') {
+        if (!d.result) {
+          setDiag('services', 'ERROR', `Сервис ${d.service} вернул result=false`, 'Проверьте доступность MAVROS сервисов');
+        }
+
+        if (d.service === '/mavros/vehicle_info_get' && d.result) {
+          const vehicles = d.values && d.values.vehicles ? d.values.vehicles : [];
+          if (vehicles.length) {
+            const v = vehicles[0];
+            if (v.sysid !== undefined && v.compid !== undefined) {
+              state.fcu.serial = `sysid:${v.sysid}, compid:${v.compid}`;
+            }
+            if (v.uid !== undefined) state.fcu.serial = String(v.uid);
+            if (v.autopilot !== undefined) state.fcu.autopilot = String(v.autopilot);
+            if (v.type !== undefined) state.fcu.vehicleType = String(v.type);
+          }
+        }
+      }
+
+      refreshUiData();
     }
 
-    setInterval(() => {
-      if (!state.mission.running) return;
-      const staleMs = Date.now() - state.lastGpsFixTimestamp;
-      if (!state.lastGpsFixTimestamp || staleMs > 5000) {
-        onGpsLost('нет обновления GPS > 5 сек');
-      }
-    }, 1000);
+    function refreshUiData() {
+      const g = state.currentGps;
+      const gpsText = g ? `${g.lat.toFixed(6)}, ${g.lon.toFixed(6)}, alt ${g.alt.toFixed(1)} м` : '—';
+      const fix = state.gpsFixStatus === null ? '—' : state.gpsFixStatus;
+
+      document.getElementById('telemetryBox').innerHTML =
+        `GPS: ${gpsText}<br>` +
+        `Fix: ${fix}<br>` +
+        `Режим: ${state.fcu.mode}<br>` +
+        `Миссия: ${state.mission.step}`;
+      document.getElementById('missionState').textContent = `Состояние: ${state.mission.step}`;
+
+      document.getElementById('dBatteryPercent').textContent = state.battery.percentage === null ? '—' : state.battery.percentage.toFixed(1) + '%';
+      document.getElementById('dBatteryVoltage').textContent = state.battery.voltage === null ? '—' : state.battery.voltage;
+      document.getElementById('dBatteryCurrent').textContent = state.battery.current === null ? '—' : state.battery.current;
+      document.getElementById('dMode').textContent = state.fcu.mode;
+      document.getElementById('dArmed').textContent = state.fcu.armed === null ? '—' : (state.fcu.armed ? 'YES' : 'NO');
+      document.getElementById('dConnected').textContent = state.fcu.connected === null ? '—' : (state.fcu.connected ? 'YES' : 'NO');
+      document.getElementById('dGpsFix').textContent = fix;
+      document.getElementById('dGps').textContent = gpsText;
+      document.getElementById('dSerial').textContent = state.fcu.serial;
+      document.getElementById('dAutopilot').textContent = state.fcu.autopilot;
+      document.getElementById('dVehicleType').textContent = state.fcu.vehicleType;
+    }
+
+    // =========================
+    // Логика миссии
+    // =========================
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     function haversineMeters(a, b) {
       const R = 6371000;
@@ -485,46 +782,56 @@
       const dLat = toRad(b.lat - a.lat);
       const dLon = toRad(b.lon - a.lon);
       const la1 = toRad(a.lat), la2 = toRad(b.lat);
-      const x = Math.sin(dLat/2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon/2) ** 2;
-      return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
     }
 
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    function callService(service, args) {
+      sendRos({ op: 'call_service', service, args: args || {} });
+    }
 
-    async function waitUntilReached(target, targetAlt, timeoutSec = 240) {
-      const start = Date.now();
+    function navigateGlobal(lat, lon, alt, speed, autoArm = false) {
+      callService('/navigate_global', { lat, lon, z: alt, speed, yaw: 0, auto_arm: !!autoArm });
+    }
+
+    function setManualMode() {
+      try {
+        callService('/release', {});
+        callService('/mavros/set_mode', { custom_mode: 'POSITION' });
+      } catch (e) {
+        log('Не удалось перейти в ручной режим: ' + e.message);
+      }
+    }
+
+    function onGpsLost(reason) {
+      stopMission(`Потеря GPS: ${reason}`);
+      setManualMode();
+      alert('GPS потерян. Миссия остановлена. Переход на ручное управление.');
+    }
+
+    async function waitUntilReached(target, alt, timeoutSec = 240) {
+      const started = Date.now();
       while (true) {
         if (state.mission.stopRequested) throw new Error('Mission stopped');
         if (!state.currentGps) { await sleep(500); continue; }
 
-        const hDist = haversineMeters(state.currentGps, target);
-        const vDist = Math.abs((state.currentGps.alt || 0) - targetAlt);
+        const h = haversineMeters(state.currentGps, target);
+        const v = Math.abs((state.currentGps.alt || 0) - alt);
+        if (h < 2.5 && v < 2.0) return;
 
-        if (hDist < 2.5 && vDist < 2.0) return;
-        if ((Date.now() - start) / 1000 > timeoutSec) throw new Error('Timeout ожидания точки');
+        if ((Date.now() - started) / 1000 > timeoutSec) throw new Error('Timeout ожидания точки');
         await sleep(700);
       }
     }
 
-    function navigateGlobal(lat, lon, alt, speed, autoArm = false) {
-      callService('/navigate_global', {
-        lat, lon, z: alt, speed,
-        yaw: 0,
-        auto_arm: !!autoArm
-      });
-    }
-
-    function validateMissionInputs() {
-      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Сначала подключитесь к ROS Bridge');
-      if (state.waypoints.length !== 5 || !state.endPoint) {
-        throw new Error('Нужно задать 5 промежуточных точек и 1 конечную');
-      }
-      if (!state.currentGps) throw new Error('Нет GPS координат от дрона');
+    function validateMission() {
+      if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Нет подключения к ROS Bridge');
+      if (!state.waypoints.length || !state.endPoint) throw new Error('Маршрут не готов: нужны WP и END');
+      if (!state.currentGps) throw new Error('Нет GPS данных от дрона');
     }
 
     async function runMission() {
-      validateMissionInputs();
-
+      validateMission();
       const cruiseAlt = parseFloat(document.getElementById('cruiseAlt').value);
       const cruiseSpeed = parseFloat(document.getElementById('cruiseSpeed').value);
       const descentAlt = parseFloat(document.getElementById('descentAlt').value);
@@ -532,97 +839,81 @@
       const endAction = document.getElementById('endAction').value;
       const afterReturn = document.getElementById('afterReturn').value;
 
-      if ([cruiseAlt, cruiseSpeed, descentAlt, descentSpeed].some(v => Number.isNaN(v) || v <= 0)) {
-        throw new Error('Проверьте высоты и скорости');
-      }
-
       state.mission.running = true;
       state.mission.stopRequested = false;
+      setDiag('mission', 'OK', 'Миссия запущена', '—');
 
       try {
-        state.mission.step = 'takeoff+route';
-        refreshTelemetryBox();
-        log('Старт миссии: взлёт и проход WP1..WP5');
+        state.mission.step = 'forward-route'; refreshUiData();
+        log(`Старт миссии: WP=${state.waypoints.length}, затем END.`);
 
         for (let i = 0; i < state.waypoints.length; i++) {
           const wp = state.waypoints[i];
-          const autoArm = i === 0;
-          navigateGlobal(wp.lat, wp.lon, cruiseAlt, cruiseSpeed, autoArm);
-          log(`Команда на WP${i+1}: alt=${cruiseAlt}, speed=${cruiseSpeed}`);
+          navigateGlobal(wp.lat, wp.lon, cruiseAlt, cruiseSpeed, i === 0);
+          log(`Команда: WP${i + 1}`);
           await waitUntilReached(wp, cruiseAlt);
-          log(`Достигнута WP${i+1}`);
         }
 
-        state.mission.step = 'final-descend';
-        refreshTelemetryBox();
+        state.mission.step = 'end-descent'; refreshUiData();
         navigateGlobal(state.endPoint.lat, state.endPoint.lon, descentAlt, descentSpeed, false);
-        log(`Переход к END со снижением: alt=${descentAlt}, speed=${descentSpeed}`);
+        log('Команда: END + снижение.');
         await waitUntilReached(state.endPoint, descentAlt);
-        log('Достигнута END (снижение выполнено).');
 
         if (endAction === 'manual_stop') {
-          state.mission.step = 'manual-transfer';
-          refreshTelemetryBox();
-          log('Действие END: переход на ручное управление, миссия завершена.');
+          state.mission.step = 'manual-transfer'; refreshUiData();
           setManualMode();
+          log('END: передача на ручное управление.');
           return;
         }
 
         state.mission.step = 'wait-operator';
         state.mission.waitingOperator = true;
-        refreshTelemetryBox();
-        log('Команда оператору: выполнить сброс. Нажмите "Продолжить после действия оператора".');
+        refreshUiData();
+        log('Ожидание действия оператора... Нажмите «Продолжить...»');
+
         await new Promise((resolve, reject) => {
           state.mission.operatorContinueResolver = resolve;
-          const watcher = setInterval(() => {
+          const guard = setInterval(() => {
             if (state.mission.stopRequested) {
-              clearInterval(watcher);
+              clearInterval(guard);
               reject(new Error('Mission stopped'));
             }
           }, 300);
         });
-        state.mission.waitingOperator = false;
 
-        state.mission.step = 'return-path';
-        refreshTelemetryBox();
-        log('Возврат по обратному пути WP5..WP1.');
+        state.mission.waitingOperator = false;
+        state.mission.step = 'return-route'; refreshUiData();
         const back = [...state.waypoints].reverse();
         for (let i = 0; i < back.length; i++) {
-          const p = back[i];
-          navigateGlobal(p.lat, p.lon, cruiseAlt, cruiseSpeed, false);
-          log(`Возврат к WP${5-i}`);
-          await waitUntilReached(p, cruiseAlt);
+          const wp = back[i];
+          navigateGlobal(wp.lat, wp.lon, cruiseAlt, cruiseSpeed, false);
+          log(`Возврат: WP${state.waypoints.length - i}`);
+          await waitUntilReached(wp, cruiseAlt);
         }
 
         if (afterReturn === 'land') {
-          state.mission.step = 'landing';
-          refreshTelemetryBox();
-          log('После возврата: посадка.');
+          state.mission.step = 'land'; refreshUiData();
           callService('/land', {});
+          log('После возврата: посадка.');
         } else {
-          log('После возврата: зависание в последней точке.');
+          log('После возврата: зависание.');
         }
 
-        state.mission.step = 'completed';
-        refreshTelemetryBox();
-        log('Миссия завершена.');
+        state.mission.step = 'completed'; refreshUiData();
+        setDiag('mission', 'OK', 'Миссия завершена', '—');
+      } catch (e) {
+        state.mission.step = 'error'; refreshUiData();
+        setDiag('mission', 'ERROR', e.message, 'Проверьте GPS, маршрут и доступность сервисов');
+        throw e;
       } finally {
         state.mission.running = false;
-        state.mission.stopRequested = false;
         state.mission.waitingOperator = false;
         state.mission.operatorContinueResolver = null;
-        if (state.mission.step !== 'completed') {
-          state.mission.step = 'idle';
-          refreshTelemetryBox();
-        }
       }
     }
 
     async function startMission() {
-      if (state.mission.running) {
-        log('Миссия уже выполняется.');
-        return;
-      }
+      if (state.mission.running) { log('Миссия уже запущена.'); return; }
       try {
         await runMission();
       } catch (e) {
@@ -631,40 +922,51 @@
     }
 
     function stopMission(reason) {
-      if (!state.mission.running) {
-        log('Миссия не запущена.');
-        return;
-      }
+      if (!state.mission.running) { log('Миссия не запущена.'); return; }
       state.mission.stopRequested = true;
-      state.mission.step = 'stopping';
-      refreshTelemetryBox();
-      log(reason || 'Стоп миссии');
+      state.mission.step = 'stopping'; refreshUiData();
       setManualMode();
+      setDiag('mission', 'ERROR', reason || 'Остановлена', 'Проверьте причину остановки и перезапустите миссию');
+      log(reason || 'Миссия остановлена.');
     }
 
     function continueAfterOperatorAction() {
       if (!state.mission.waitingOperator || !state.mission.operatorContinueResolver) {
-        log('Сейчас нет ожидания действия оператора.');
+        log('Сейчас не ожидается действие оператора.');
         return;
       }
-      const resolver = state.mission.operatorContinueResolver;
+      const r = state.mission.operatorContinueResolver;
       state.mission.operatorContinueResolver = null;
-      resolver();
-      log('Подтверждение оператора получено. Продолжаем миссию.');
+      r();
+      log('Оператор подтвердил продолжение.');
     }
 
     function emergencyLand() {
       try {
         state.mission.stopRequested = true;
         callService('/land', {});
-        log('Аварийная посадка отправлена.');
+        setDiag('mission', 'ERROR', 'Аварийная посадка', 'Проверить причину аварийного завершения');
+        log('Команда аварийной посадки отправлена.');
       } catch (e) {
         log('Ошибка аварийной посадки: ' + e.message);
       }
     }
 
+    // Контроль "зависшего" GPS потока
+    setInterval(() => {
+      if (!state.mission.running) return;
+      const stale = Date.now() - state.lastGpsTimestamp;
+      if (!state.lastGpsTimestamp || stale > 5000) {
+        setDiag('gpsStream', 'ERROR', 'Нет обновлений GPS > 5 сек', 'Проверить GPS/антенну/топики');
+        onGpsLost('нет обновлений > 5 сек');
+      }
+    }, 1000);
+
+    // Инициализация
     initMap();
-    refreshTelemetryBox();
+    renderDiagnosticsTable();
+    refreshUiData();
+    updateRouteDiagnostic();
   </script>
 </body>
 </html>
