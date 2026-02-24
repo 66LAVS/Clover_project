@@ -242,6 +242,7 @@
             <button class="danger" onclick="stopMission('Остановлено оператором')">Стоп</button>
           </div>
           <button class="secondary" onclick="continueAfterOperatorAction()">Продолжить после действия оператора</button>
+          <button class="secondary" onclick="hoverInPlace()">Зависнуть на месте</button>
           <button class="danger" onclick="emergencyLand()">Аварийная посадка</button>
           <div class="hint" style="margin-top:8px" id="missionState">Состояние: idle</div>
         </div>
@@ -949,6 +950,26 @@
         log('Команда аварийной посадки отправлена.');
       } catch (e) {
         log('Ошибка аварийной посадки: ' + e.message);
+      }
+    }
+
+    function hoverInPlace() {
+      try {
+        if (!state.currentGps) {
+          log('Нельзя зависнуть: нет текущих GPS данных.');
+          return;
+        }
+        const holdAlt = typeof state.currentGps.alt === 'number'
+          ? state.currentGps.alt
+          : parseFloat(document.getElementById('cruiseAlt').value) || 10;
+
+        navigateGlobal(state.currentGps.lat, state.currentGps.lon, holdAlt, 0.5, false);
+        state.mission.step = 'hover';
+        refreshUiData();
+        setDiag('mission', 'OK', 'Команда зависания отправлена', '—');
+        log('Команда: зависание на текущей позиции отправлена.');
+      } catch (e) {
+        log('Ошибка команды зависания: ' + e.message);
       }
     }
 
